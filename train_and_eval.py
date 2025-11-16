@@ -1,21 +1,20 @@
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, Subset
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from model import AcousticVAE, compute_loss  # 导入VAE模型和损失函数
+from sklearn.model_selection import train_test_split
+from model import AcousticVAE, compute_loss  # 导入模型和损失函数
 import random
 
 # 全局超参数配置
-LR = 5e-4
-NUM_EPOCHS = 120
-BATCH_SIZE = 256
+LR = 1e-4
+NUM_EPOCHS = 80
+BATCH_SIZE = 128
 VAL_SPLIT = 0.2
-SEED = 2
+SEED = 42
 Z_DIM = 16  # 隐变量维度
-LAMBDA_KL = 1.0  # KL散度损失权重
-LAMBDA_CLASS = 10.0  # 分类损失权重
 
 # ========== 设置所有随机种子，确保可复现 ==========
 def set_seed(seed):
@@ -53,15 +52,43 @@ class VesselDataset(Dataset):
         x = self.X[idx].permute(2, 0, 1)
         return x, self.y[idx]  # (C,H,W), label
 
-# 划分训练集和验证集，比例8:2，保证可复现
-dataset = VesselDataset(X, y)
-val_size = int(VAL_SPLIT * len(dataset))
-train_size = len(dataset) - val_size
-# 使用固定种子的生成器
-train_dataset, val_dataset = random_split(
-    dataset, [train_size, val_size], 
-    generator=torch.Generator().manual_seed(SEED)
+# 使用分层划分确保训练集和验证集中各类别比例一致
+# 先获取所有索引，然后按类别分层划分
+indices = np.arange(len(y))
+train_indices, val_indices = train_test_split(
+    indices, 
+    test_size=VAL_SPLIT, 
+    stratify=y,  # 按照y的类别分布进行分层
+    random_state=SEED
 )
+
+# 打印各类别在训练集和验证集中的分布
+print("=" * 60)
+print("数据集划分统计 (分层采样):")
+print(f"总样本数: {len(y)}")
+print(f"训练集样本数: {len(train_indices)}")
+print(f"验证集样本数: {len(val_indices)}")
+print("-" * 60)
+
+for i, label_name in enumerate(labels):
+    total_count = np.sum(y == i)
+    train_count = np.sum(y[train_indices] == i)
+    val_count = np.sum(y[val_indices] == i)
+    train_ratio = train_count / total_count * 100
+    val_ratio = val_count / total_count * 100
+    print(f"类别 '{label_name}':")
+    print(f"  总数: {total_count} | 训练集: {train_count} ({train_ratio:.1f}%) | "
+          f"验证集: {val_count} ({val_ratio:.1f}%)")
+
+print("=" * 60 + "\n")
+
+# 创建完整数据集
+dataset = VesselDataset(X, y)
+
+# 使用Subset创建训练集和验证集
+train_dataset = Subset(dataset, train_indices)
+val_dataset = Subset(dataset, val_indices)
+
 # DataLoader也需要设置worker的随机种子
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
@@ -91,45 +118,33 @@ optimizer = optim.Adam(model.parameters(), lr=LR)
 num_epochs = NUM_EPOCHS
 train_loss_hist, val_loss_hist = [], []
 train_acc_hist, val_acc_hist = [], []
-# 记录各部分损失
-train_recon_hist, train_kl_hist, train_class_hist = [], [], []
 
 for epoch in range(num_epochs):
     model.train()
     running_loss, correct, total = 0, 0, 0
-    epoch_recon, epoch_kl, epoch_class = 0, 0, 0
     
     for xb, yb in train_loader:
         xb, yb = xb.to(device), yb.to(device)
         optimizer.zero_grad()
         
-        # VAE前向传播
-        x_recon, mu, log_var, class_probs, z = model(xb)
+        # 前向传播
+        class_logits, mu, log_var, z = model(xb)
         
-        # 计算VAE损失
-        loss, loss_dict = compute_loss(
-            xb, x_recon, mu, log_var, class_probs, yb,
-            lambda_kl=LAMBDA_KL, lambda_class=LAMBDA_CLASS
-        )
+        # 计算分类损失
+        loss, loss_dict = compute_loss(class_logits, yb)
         
         loss.backward()
         optimizer.step()
         
         running_loss += loss_dict['total'] * xb.size(0)
-        epoch_recon += loss_dict['recon'] * xb.size(0)
-        epoch_kl += loss_dict['kl'] * xb.size(0)
-        epoch_class += loss_dict['class'] * xb.size(0)
         
-        # 使用类别概率计算准确率
-        _, preds = class_probs.max(1)
+        # 使用类别logits计算准确率
+        _, preds = class_logits.max(1)
         correct += (preds == yb).sum().item()
         total += xb.size(0)
     
     train_loss_hist.append(running_loss / total)
     train_acc_hist.append(correct / total)
-    train_recon_hist.append(epoch_recon / total)
-    train_kl_hist.append(epoch_kl / total)
-    train_class_hist.append(epoch_class / total)
 
     model.eval()
     val_loss, val_correct, val_total = 0, 0, 0
@@ -137,19 +152,16 @@ for epoch in range(num_epochs):
         for xb, yb in val_loader:
             xb, yb = xb.to(device), yb.to(device)
             
-            # VAE前向传播
-            x_recon, mu, log_var, class_probs, z = model(xb)
+            # 前向传播
+            class_logits, mu, log_var, z = model(xb)
             
             # 计算损失
-            loss, loss_dict = compute_loss(
-                xb, x_recon, mu, log_var, class_probs, yb,
-                lambda_kl=LAMBDA_KL, lambda_class=LAMBDA_CLASS
-            )
+            loss, loss_dict = compute_loss(class_logits, yb)
             
             val_loss += loss_dict['total'] * xb.size(0)
             
-            # 使用类别概率计算准确率
-            _, preds = class_probs.max(1)
+            # 使用类别logits计算准确率
+            _, preds = class_logits.max(1)
             val_correct += (preds == yb).sum().item()
             val_total += xb.size(0)
     
@@ -157,33 +169,23 @@ for epoch in range(num_epochs):
     val_acc_hist.append(val_correct / val_total)
     
     print(f"Epoch {epoch+1}/{num_epochs} - "
-          f"Train Loss: {train_loss_hist[-1]:.4f} (Recon: {train_recon_hist[-1]:.4f}, "
-          f"KL: {train_kl_hist[-1]:.4f}, Class: {train_class_hist[-1]:.4f}) - "
+          f"Train Loss: {train_loss_hist[-1]:.4f} - "
           f"Train Acc: {train_acc_hist[-1]:.4f} - Val Acc: {val_acc_hist[-1]:.4f}")
 
 # 保存模型权重
 torch.save(model.state_dict(), 'vessel_vae.pt')
 
 # 可视化训练过程：损失和准确率曲线
-plt.figure(figsize=(18,5))
-plt.subplot(1,3,1)
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
 plt.plot(train_loss_hist, label='train_loss')
 plt.plot(val_loss_hist, label='val_loss')
 plt.legend()
-plt.title('Total Loss')
+plt.title('Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 
-plt.subplot(1,3,2)
-plt.plot(train_recon_hist, label='recon_loss')
-plt.plot(train_kl_hist, label='kl_loss')
-plt.plot(train_class_hist, label='class_loss')
-plt.legend()
-plt.title('Training Loss Components')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-
-plt.subplot(1,3,3)
+plt.subplot(1,2,2)
 plt.plot(train_acc_hist, label='train_acc')
 plt.plot(val_acc_hist, label='val_acc')
 plt.legend()
@@ -199,9 +201,9 @@ all_preds, all_labels = [], []
 with torch.no_grad():
     for xb, yb in val_loader:
         xb = xb.to(device)
-        # 使用VAE的类别概率输出
-        _, _, _, class_probs, _ = model(xb)
-        preds = class_probs.argmax(1).cpu().numpy()
+        # 使用模型的类别logits输出
+        class_logits, _, _, _ = model(xb)
+        preds = class_logits.argmax(1).cpu().numpy()
         all_preds.extend(preds)
         all_labels.extend(yb.numpy())
 
