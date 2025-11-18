@@ -25,7 +25,7 @@
 ### 1.3 数据集
 
 使用**DeepShip数据集**部分数据：
-- 包含Cargo（货船）、Passengership（客船）、Tanker（油轮）等多种船舶类型
+- 包含Cargo（货船）、Passengership（客船）、Tanker（油轮）、Tug（拖船）四种船舶类型，总时长47小时04分钟
 - WAV格式，采样率44.1kHz，单声道
 - 真实海洋环境下的长时段录音（数十秒至数分钟）
 
