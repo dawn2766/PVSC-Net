@@ -1,4 +1,5 @@
-# 水下声学目标识别的概率生成模型（基于编码器-分类器架构）
+# 水下声学目标识别的概率变分船舶分类网络（PVSC-Net）
+# Probabilistic Variational Ship Classifier Network
 # 模型针对2D梅尔频谱设计，学习声学特征的潜在表示并进行分类
 
 import torch
@@ -8,26 +9,28 @@ import torch.nn.functional as F
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class AcousticVAE(nn.Module):
+class PVSCNet(nn.Module):
     """
-    水下声学目标识别的编码器-分类器模型
-    核心思想：学习声学特征的隐变量z，并通过z预测目标类别
+    PVSC-Net: Probabilistic Variational Ship Classifier Network
+    概率变分船舶分类网络
+    
+    核心思想：学习声学特征的隐变量z，并通过z预测船舶类别
     
     架构：
     - 编码器 (encoder_z): 学习声学变异性的隐变量z（输出均值和对数方差）
-    - 分类器 (classifier): 从隐变量z预测目标类别概率
+    - 分类器 (classifier): 从隐变量z预测船舶类别概率
     """
     
     def __init__(self, num_classes, input_shape, z_dim=16):
         """
-        初始化声学分类模型
+        初始化PVSC-Net模型
         
         Args:
-            num_classes: 目标类别数（如：潜艇、鱼雷、水面舰艇等）
+            num_classes: 船舶类别数（如：Cargo、Passengership、Tanker等）
             input_shape: 输入梅尔频谱的形状 (height, width)
             z_dim: 隐变量维度，控制声学特征变异性的空间维度
         """
-        super(AcousticVAE, self).__init__()
+        super(PVSCNet, self).__init__()
         self.num_classes = num_classes
         self.z_dim = z_dim
         self.input_height, self.input_width = input_shape
@@ -170,8 +173,12 @@ def compute_loss(class_logits, labels):
     return loss_class, loss_dict
 
 
-# 保留原始简单CNN模型以便兼容
+# 简单CNN模型作为对照
 class VesselCNN(nn.Module):
+    """
+    简单CNN网络：作为PVSC-Net的对照模型
+    直接从梅尔频谱预测船舶类别，不使用隐变量表示
+    """
     def __init__(self, X, num_classes):
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
@@ -195,14 +202,14 @@ class VesselCNN(nn.Module):
 
 
 if __name__ == '__main__':
-    # 测试代码：验证模型的输入输出维度
-    num_classes = 5  # 假设5类水下目标
+    # 测试代码：验证PVSC-Net的输入输出维度
+    num_classes = 5  # 假设5类船舶
     input_shape = (128, 128)  # 梅尔频谱尺寸
     z_dim = 16  # 隐变量维度
     batch_size = 4
     
-    # 创建模型
-    model = AcousticVAE(num_classes, input_shape, z_dim)
+    # 创建PVSC-Net模型
+    model = PVSCNet(num_classes, input_shape, z_dim)
     
     # 模拟输入
     x = torch.randn(batch_size, 1, 128, 128)
@@ -215,7 +222,7 @@ if __name__ == '__main__':
     loss, loss_dict = compute_loss(class_logits, labels)
     
     print('=' * 50)
-    print('模型测试结果:')
+    print('PVSC-Net模型测试结果:')
     print(f'输入形状: {x.shape}')
     print(f'隐变量z形状: {z.shape}')
     print(f'类别logits形状: {class_logits.shape}')

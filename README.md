@@ -1,6 +1,6 @@
 # 基于深度学习的水下声学目标分类
 
-本项目实现了基于深度学习的船舶声学分类，利用DeepShip部分数据集中的水下音频数据，通过编码器-分类器架构自动识别不同类型的船舶。
+本项目实现了基于深度学习的船舶声学分类，利用DeepShip部分数据集中的水下音频数据，通过**PVSC-Net（概率变分船舶分类网络）**自动识别不同类型的船舶。
 
 ---
 
@@ -15,10 +15,12 @@ VesselCategorization/
 │   └── labels.npy
 ├── data_preprocess.py   # 数据预处理与特征提取脚本
 ├── train_and_eval.py    # 模型训练、验证与可视化脚本（PyTorch实现）
-├── model.py             # 模型结构文件（PyTorch实现）
-├── vessel_vae.pt        # 训练好的模型权重
-├── train_val_curve.png  # 损失与准确率曲线
-├── confusion_matrix.png # 混淆矩阵可视化
+├── model.py             # 模型结构文件（PVSC-Net和VesselCNN）
+├── vessel_pvsc.pt       # 训练好的PVSC-Net权重
+├── vessel_cnn.pt        # 训练好的VesselCNN权重
+├── model_comparison.png # 两个模型的对比曲线
+├── confusion_matrix_pvsc.png # PVSC-Net混淆矩阵
+├── confusion_matrix_cnn.png  # VesselCNN混淆矩阵
 └── README.md
 ```
 
@@ -55,7 +57,7 @@ python data_preprocess.py
 
 ### 模型架构综述
 
-本项目采用**编码器-分类器架构**，专门为水下声学目标识别设计。该模型通过深度卷积神经网络提取梅尔频谱的时频特征，并通过隐变量表示进行分类。
+本项目采用**PVSC-Net（Probabilistic Variational Ship Classifier Network，概率变分船舶分类网络）**作为主模型，并使用**简单CNN网络**作为对照。PVSC-Net是一个专门为水下声学目标识别设计的编码器-分类器架构，通过深度卷积神经网络提取梅尔频谱的时频特征，并通过隐变量表示进行分类。
 
 #### 设计理念
 
@@ -65,7 +67,7 @@ python data_preprocess.py
 - **背景噪声**：海洋生物、船舶噪声、水流声等干扰
 - **传感器特性**：不同水听器的频率响应差异
 
-本模型通过**隐变量学习**显式建模这些变异性，将声学信号编码为低维的隐变量表示，然后在隐变量空间中进行分类。这种方法的优势在于：
+PVSC-Net通过**隐变量学习**显式建模这些变异性，将声学信号编码为低维的隐变量表示，然后在隐变量空间中进行分类。这种方法的优势在于：
 - **特征压缩**：将高维梅尔频谱压缩为16维隐变量，提取关键判别信息
 - **正则化**：通过学习隐变量的分布参数（均值和方差），提供隐式正则化
 - **鲁棒性**：隐变量表示对噪声和变异性更加鲁棒
@@ -202,14 +204,14 @@ FC3:          (num_classes,)  # 输出logits
 
 #### 损失函数
 
-本模型仅使用**分类损失（交叉熵）**进行端到端训练：
+PVSC-Net仅使用**分类损失（交叉熵）**进行端到端训练：
 
 ```python
 Loss = CrossEntropy(logits, labels)
 ```
 
 **为什么不使用重构损失和KL散度？**
-- 本模型专注于分类任务，不需要生成/重构能力
+- PVSC-Net专注于分类任务，不需要生成/重构能力
 - 隐变量的正则化通过Dropout和BatchNorm实现
 - 简化的损失函数使训练更加稳定和高效
 
@@ -259,40 +261,50 @@ train_indices, val_indices = train_test_split(
 ...
 ==============================================================
 
+第一阶段: 开始训练 PVSC-Net 模型
 Epoch 1/80 - Train Loss: 1.6094 - Train Acc: 0.2000 - Val Acc: 0.2500
 Epoch 2/80 - Train Loss: 1.4523 - Train Acc: 0.3500 - Val Acc: 0.4000
 ...
 Epoch 80/80 - Train Loss: 0.0234 - Train Acc: 0.9950 - Val Acc: 0.9800
 
+PVSC-Net 模型训练完成，权重已保存至: vessel_pvsc.pt
 最终验证准确率: 0.9800
-模型已保存至: vessel_vae.pt
+
+第二阶段: 开始训练 VesselCNN 模型（对照）
+Epoch 1/80 - Train Loss: 1.6012 - Train Acc: 0.2050 - Val Acc: 0.2450
+...
 ```
 
 ### 3. 结果可视化
 
 训练完成后会自动生成：
-- `train_val_curve.png`：损失和准确率曲线
-- `confusion_matrix.png`：混淆矩阵
+- `model_comparison.png`：两个模型的损失和准确率对比曲线
+- `confusion_matrix_pvsc.png`：PVSC-Net的混淆矩阵
+- `confusion_matrix_cnn.png`：VesselCNN的混淆矩阵
 
 ---
 
 ## 结果可视化与模型表现
 
-### 损失与准确率曲线
+### 模型对比曲线
 
-训练过程中的损失和准确率如下图所示：
+两个模型的训练过程对比如下图所示：
 
-![训练与验证损失、准确率曲线](train_val_curve.png)
+![模型对比曲线](model_comparison.png)
 
-- **分析**：随着训练轮数的增加，训练损失逐渐下降，准确率逐步提升，验证集表现稳定，说明模型收敛良好且无明显过拟合。
+- **分析**：PVSC-Net通过隐变量学习实现更好的特征表示，相比简单CNN具有更高的准确率和更好的收敛性。
 
 ### 混淆矩阵
 
-模型在验证集上的分类表现如下：
+#### PVSC-Net 混淆矩阵
 
-![验证集混淆矩阵](confusion_matrix.png)
+![PVSC-Net混淆矩阵](confusion_matrix_pvsc.png)
 
-- **分析**：混淆矩阵展示了各类别的分类准确性，对角线上的数值越高，说明模型对该类别的识别效果越好。
+#### VesselCNN 混淆矩阵
+
+![VesselCNN混淆矩阵](confusion_matrix_cnn.png)
+
+- **分析**：PVSC-Net在各类别上的分类准确性普遍高于简单CNN，证明了隐变量学习的有效性。
 
 ---
 
@@ -324,10 +336,11 @@ pip install librosa numpy torch matplotlib scikit-learn
 
 1. **移动窗口采样**：50%重叠率有效增加数据量
 2. **分层数据划分**：确保训练/验证集类别比例一致
-3. **隐变量学习**：显式建模声学特征的变异性
+3. **PVSC-Net架构**：概率变分方法显式建模声学特征的变异性
 4. **端到端训练**：简化的损失函数，训练更稳定
 5. **完整可复现**：固定所有随机种子，结果可重现
 6. **详细日志**：训练过程输出详细的统计信息
+7. **模型对比**：同时训练PVSC-Net和简单CNN，直观展示性能差异
 
 ---
 

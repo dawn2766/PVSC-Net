@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader, Subset
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import train_test_split
-from model import AcousticVAE, VesselCNN, compute_loss  # 导入模型和损失函数
+from model import PVSCNet, VesselCNN, compute_loss  # 导入PVSC-Net模型和损失函数
 import random
 
 # 全局超参数配置
@@ -111,19 +111,19 @@ val_loader = DataLoader(
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # ========== 初始化两个模型 ==========
-# 使用AcousticVAE模型（编码器-分类器架构）
+# 使用PVSC-Net模型（概率变分船舶分类网络）
 input_shape = (X.shape[1], X.shape[2])  # (height, width)
-model_vae = AcousticVAE(num_classes=len(labels), input_shape=input_shape, z_dim=Z_DIM).to(device)
-optimizer_vae = optim.Adam(model_vae.parameters(), lr=LR)
+model_pvsc = PVSCNet(num_classes=len(labels), input_shape=input_shape, z_dim=Z_DIM).to(device)
+optimizer_pvsc = optim.Adam(model_pvsc.parameters(), lr=LR)
 
-# 使用VesselCNN模型（简单CNN）
+# 使用VesselCNN模型（简单CNN对照）
 model_cnn = VesselCNN(X, num_classes=len(labels)).to(device)
 optimizer_cnn = optim.Adam(model_cnn.parameters(), lr=LR)
 
 print("\n" + "=" * 60)
 print("训练计划:")
-print(f"  第一阶段: 训练 AcousticVAE (编码器-分类器架构)")
-print(f"  第二阶段: 训练 VesselCNN (简单CNN)")
+print(f"  第一阶段: 训练 PVSC-Net (概率变分船舶分类网络)")
+print(f"  第二阶段: 训练 VesselCNN (简单CNN对照)")
 print(f"  每个模型训练轮数: {NUM_EPOCHS}")
 print("=" * 60 + "\n")
 
@@ -131,82 +131,82 @@ print("=" * 60 + "\n")
 num_epochs = NUM_EPOCHS
 
 # 存储两个模型的训练历史
-vae_train_loss_hist, vae_val_loss_hist = [], []
-vae_train_acc_hist, vae_val_acc_hist = [], []
+pvsc_train_loss_hist, pvsc_val_loss_hist = [], []
+pvsc_train_acc_hist, pvsc_val_acc_hist = [], []
 
 cnn_train_loss_hist, cnn_val_loss_hist = [], []
 cnn_train_acc_hist, cnn_val_acc_hist = [], []
 
-# ========== 第一阶段: 训练 AcousticVAE 模型 ==========
+# ========== 第一阶段: 训练 PVSC-Net 模型 ==========
 print("=" * 60)
-print("第一阶段: 开始训练 AcousticVAE 模型")
+print("第一阶段: 开始训练 PVSC-Net 模型")
 print("=" * 60 + "\n")
 
 for epoch in range(num_epochs):
-    # 训练 AcousticVAE
-    model_vae.train()
-    vae_running_loss, vae_correct, vae_total = 0, 0, 0
+    # 训练 PVSC-Net
+    model_pvsc.train()
+    pvsc_running_loss, pvsc_correct, pvsc_total = 0, 0, 0
     
     for xb, yb in train_loader:
         xb, yb = xb.to(device), yb.to(device)
-        optimizer_vae.zero_grad()
+        optimizer_pvsc.zero_grad()
         
         # 前向传播
-        class_logits, mu, log_var, z = model_vae(xb)
+        class_logits, mu, log_var, z = model_pvsc(xb)
         
         # 计算分类损失
         loss, loss_dict = compute_loss(class_logits, yb)
         
         loss.backward()
-        optimizer_vae.step()
+        optimizer_pvsc.step()
         
-        vae_running_loss += loss_dict['total'] * xb.size(0)
+        pvsc_running_loss += loss_dict['total'] * xb.size(0)
         
         # 使用类别logits计算准确率
         _, preds = class_logits.max(1)
-        vae_correct += (preds == yb).sum().item()
-        vae_total += xb.size(0)
+        pvsc_correct += (preds == yb).sum().item()
+        pvsc_total += xb.size(0)
     
-    vae_train_loss_hist.append(vae_running_loss / vae_total)
-    vae_train_acc_hist.append(vae_correct / vae_total)
+    pvsc_train_loss_hist.append(pvsc_running_loss / pvsc_total)
+    pvsc_train_acc_hist.append(pvsc_correct / pvsc_total)
 
-    # 验证 AcousticVAE
-    model_vae.eval()
-    vae_val_loss, vae_val_correct, vae_val_total = 0, 0, 0
+    # 验证 PVSC-Net
+    model_pvsc.eval()
+    pvsc_val_loss, pvsc_val_correct, pvsc_val_total = 0, 0, 0
     with torch.no_grad():
         for xb, yb in val_loader:
             xb, yb = xb.to(device), yb.to(device)
             
             # 前向传播
-            class_logits, mu, log_var, z = model_vae(xb)
+            class_logits, mu, log_var, z = model_pvsc(xb)
             
             # 计算损失
             loss, loss_dict = compute_loss(class_logits, yb)
             
-            vae_val_loss += loss_dict['total'] * xb.size(0)
+            pvsc_val_loss += loss_dict['total'] * xb.size(0)
             
             # 使用类别logits计算准确率
             _, preds = class_logits.max(1)
-            vae_val_correct += (preds == yb).sum().item()
-            vae_val_total += xb.size(0)
+            pvsc_val_correct += (preds == yb).sum().item()
+            pvsc_val_total += xb.size(0)
     
-    vae_val_loss_hist.append(vae_val_loss / vae_val_total)
-    vae_val_acc_hist.append(vae_val_correct / vae_val_total)
+    pvsc_val_loss_hist.append(pvsc_val_loss / pvsc_val_total)
+    pvsc_val_acc_hist.append(pvsc_val_correct / pvsc_val_total)
     
     # 打印训练进度
     print(f"Epoch {epoch+1}/{num_epochs} - "
-          f"Train Loss: {vae_train_loss_hist[-1]:.4f}, "
-          f"Train Acc: {vae_train_acc_hist[-1]:.4f}, "
-          f"Val Acc: {vae_val_acc_hist[-1]:.4f}")
+          f"Train Loss: {pvsc_train_loss_hist[-1]:.4f}, "
+          f"Train Acc: {pvsc_train_acc_hist[-1]:.4f}, "
+          f"Val Acc: {pvsc_val_acc_hist[-1]:.4f}")
 
-# 保存 AcousticVAE 模型
-torch.save(model_vae.state_dict(), 'vessel_vae.pt')
-print(f"\nAcousticVAE 模型训练完成，权重已保存至: vessel_vae.pt")
-print(f"最终验证准确率: {vae_val_acc_hist[-1]:.4f}\n")
+# 保存 PVSC-Net 模型
+torch.save(model_pvsc.state_dict(), 'vessel_pvsc.pt')
+print(f"\nPVSC-Net 模型训练完成，权重已保存至: vessel_pvsc.pt")
+print(f"最终验证准确率: {pvsc_val_acc_hist[-1]:.4f}\n")
 
 # ========== 第二阶段: 训练 VesselCNN 模型 ==========
 print("=" * 60)
-print("第二阶段: 开始训练 VesselCNN 模型")
+print("第二阶段: 开始训练 VesselCNN 模型（对照）")
 print("=" * 60 + "\n")
 
 for epoch in range(num_epochs):
@@ -276,7 +276,7 @@ plt.figure(figsize=(18, 5))
 
 # 子图1: 训练损失对比
 plt.subplot(1, 3, 1)
-plt.plot(vae_train_loss_hist, label='AcousticVAE Train Loss', linewidth=2)
+plt.plot(pvsc_train_loss_hist, label='PVSC-Net Train Loss', linewidth=2)
 plt.plot(cnn_train_loss_hist, label='VesselCNN Train Loss', linewidth=2, linestyle='--')
 plt.legend()
 plt.title('Training Loss Comparison')
@@ -286,7 +286,7 @@ plt.grid(True, alpha=0.3)
 
 # 子图2: 训练准确率对比
 plt.subplot(1, 3, 2)
-plt.plot(vae_train_acc_hist, label='AcousticVAE Train Acc', linewidth=2)
+plt.plot(pvsc_train_acc_hist, label='PVSC-Net Train Acc', linewidth=2)
 plt.plot(cnn_train_acc_hist, label='VesselCNN Train Acc', linewidth=2, linestyle='--')
 plt.legend()
 plt.title('Training Accuracy Comparison')
@@ -296,7 +296,7 @@ plt.grid(True, alpha=0.3)
 
 # 子图3: 验证准确率对比
 plt.subplot(1, 3, 3)
-plt.plot(vae_val_acc_hist, label='AcousticVAE Val Acc', linewidth=2)
+plt.plot(pvsc_val_acc_hist, label='PVSC-Net Val Acc', linewidth=2)
 plt.plot(cnn_val_acc_hist, label='VesselCNN Val Acc', linewidth=2, linestyle='--')
 plt.legend()
 plt.title('Validation Accuracy Comparison')
@@ -308,14 +308,14 @@ plt.tight_layout()
 plt.savefig('model_comparison.png', dpi=300)
 print("\n模型对比图已保存至: model_comparison.png")
 
-# ========== 计算并可视化 AcousticVAE 的混淆矩阵 ==========
-model_vae.eval()
+# ========== 计算并可视化 PVSC-Net 的混淆矩阵 ==========
+model_pvsc.eval()
 all_preds, all_labels = [], []
 with torch.no_grad():
     for xb, yb in val_loader:
         xb = xb.to(device)
         # 使用模型的类别logits输出
-        class_logits, _, _, _ = model_vae(xb)
+        class_logits, _, _, _ = model_pvsc(xb)
         preds = class_logits.argmax(1).cpu().numpy()
         all_preds.extend(preds)
         all_labels.extend(yb.numpy())
@@ -324,9 +324,9 @@ cm = confusion_matrix(all_labels, all_preds)
 disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
 plt.figure(figsize=(10, 8))
 disp.plot(xticks_rotation=45)
-plt.title('AcousticVAE Confusion Matrix')
+plt.title('PVSC-Net Confusion Matrix')
 plt.tight_layout()
-plt.savefig('confusion_matrix_vae.png')
+plt.savefig('confusion_matrix_pvsc.png')
 
 # ========== 计算并可视化 VesselCNN 的混淆矩阵 ==========
 model_cnn.eval()
@@ -350,10 +350,10 @@ plt.savefig('confusion_matrix_cnn.png')
 # ========== 打印最终结果对比 ==========
 print("\n" + "=" * 60)
 print("最终结果对比:")
-print(f"  AcousticVAE 验证准确率: {vae_val_acc_hist[-1]:.4f}")
-print(f"  VesselCNN 验证准确率:   {cnn_val_acc_hist[-1]:.4f}")
-print(f"  准确率提升: {(vae_val_acc_hist[-1] - cnn_val_acc_hist[-1]):.4f}")
+print(f"  PVSC-Net 验证准确率:  {pvsc_val_acc_hist[-1]:.4f}")
+print(f"  VesselCNN 验证准确率: {cnn_val_acc_hist[-1]:.4f}")
+print(f"  准确率提升: {(pvsc_val_acc_hist[-1] - cnn_val_acc_hist[-1]):.4f}")
 print("=" * 60)
 print(f"\n模型权重已保存:")
-print(f"  vessel_vae.pt (AcousticVAE)")
+print(f"  vessel_pvsc.pt (PVSC-Net)")
 print(f"  vessel_cnn.pt (VesselCNN)")
