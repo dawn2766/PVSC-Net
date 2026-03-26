@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 DATA_DIR = 'data'  # 原始数据目录
 OUTPUT_DIR = 'processed'  # 保存预处理数据的文件夹
 SAMPLE_RATE = 16000  # 采样率
-CLIP_DURATION = 5  # 每个音频片段的时长（秒）
+CLIP_DURATION = 1  # 每个音频片段的时长（秒）
 CLIP_SAMPLES = SAMPLE_RATE * CLIP_DURATION  # 每个片段的采样点数
 OVERLAP_RATIO = 0.5  # 窗口重叠率50%
 HOP_SAMPLES = int(CLIP_SAMPLES * (1 - OVERLAP_RATIO))  # 移动步长
