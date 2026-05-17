@@ -3,22 +3,48 @@ import numpy as np
 import torch
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, Subset
-import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from sklearn.model_selection import train_test_split
+try:
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import ConfusionMatrixDisplay
+    HAS_MPL = True
+except Exception:
+    HAS_MPL = False
+
+def stratified_train_test_split(indices, y, test_size=0.2, random_state=42):
+    """
+    简单的分层划分替代（不依赖 scikit-learn）。
+    返回 (train_indices, val_indices)
+    """
+    rng = np.random.RandomState(random_state)
+    labels_unique = np.unique(y)
+
+    train_list = []
+    val_list = []
+
+    for lab in labels_unique:
+        lab_idx = indices[y == lab]
+        if len(lab_idx) == 0:
+            continue
+        rng.shuffle(lab_idx)
+        n_val = int(np.ceil(len(lab_idx) * test_size))
+        val_list.extend(lab_idx[:n_val].tolist())
+        train_list.extend(lab_idx[n_val:].tolist())
+
+    return np.array(train_list, dtype=int), np.array(val_list, dtype=int)
 
 from model import PVSCNet, VesselCNN, compute_loss as compute_loss_pvsc
 from model2 import DVSCNet, compute_loss as compute_loss_dvsc
+import os
 
 
-# Global hyperparameters
-LR = 1e-4
-NUM_EPOCHS = 100
-BATCH_SIZE = 256
-VAL_SPLIT = 0.2
-SEED = 42
-Z_DIM = 16
-DVSC_Z_DIM = 128
+# Global hyperparameters (allow overrides via environment variables for quick tests)
+LR = float(os.getenv("LR", "1e-4"))
+NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", "100"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "256"))
+VAL_SPLIT = float(os.getenv("VAL_SPLIT", "0.2"))
+SEED = int(os.getenv("SEED", "42"))
+Z_DIM = int(os.getenv("Z_DIM", "16"))
+DVSC_Z_DIM = int(os.getenv("DVSC_Z_DIM", "128"))
 
 
 def set_seed(seed):
@@ -59,12 +85,7 @@ class VesselDataset(Dataset):
 
 
 indices = np.arange(len(y))
-train_indices, val_indices = train_test_split(
-    indices,
-    test_size=VAL_SPLIT,
-    stratify=y,
-    random_state=SEED,
-)
+train_indices, val_indices = stratified_train_test_split(indices, y, test_size=VAL_SPLIT, random_state=SEED)
 
 print("=" * 60)
 print("数据集划分统计 (分层采样):")
@@ -251,59 +272,71 @@ print("  vessel_pvsc.pt")
 print("  vessel_cnn.pt")
 print("  vessel_dvsc.pt\n")
 
-# Plot 3-model comparison
-plt.figure(figsize=(18, 5))
 
-plt.subplot(1, 3, 1)
-plt.plot(pvsc_hist["train_loss"], label="PVSC-Net Train Loss", linewidth=2)
-plt.plot(cnn_hist["train_loss"], label="VesselCNN Train Loss", linewidth=2, linestyle="--")
-plt.plot(dvsc_hist["train_loss"], label="DVSC-Net Train Loss", linewidth=2, linestyle=":")
-plt.legend()
-plt.title("Training Loss Comparison")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.grid(True, alpha=0.3)
+# Plot 3-model comparison (skip if matplotlib not available)
+if HAS_MPL:
+    plt.figure(figsize=(18, 5))
 
-plt.subplot(1, 3, 2)
-plt.plot(pvsc_hist["train_acc"], label="PVSC-Net Train Acc", linewidth=2)
-plt.plot(cnn_hist["train_acc"], label="VesselCNN Train Acc", linewidth=2, linestyle="--")
-plt.plot(dvsc_hist["train_acc"], label="DVSC-Net Train Acc", linewidth=2, linestyle=":")
-plt.legend()
-plt.title("Training Accuracy Comparison")
-plt.xlabel("Epoch")
-plt.ylabel("Accuracy")
-plt.grid(True, alpha=0.3)
+    plt.subplot(1, 3, 1)
+    plt.plot(pvsc_hist["train_loss"], label="PVSC-Net Train Loss", linewidth=2)
+    plt.plot(cnn_hist["train_loss"], label="VesselCNN Train Loss", linewidth=2, linestyle="--")
+    plt.plot(dvsc_hist["train_loss"], label="DVSC-Net Train Loss", linewidth=2, linestyle=":")
+    plt.legend()
+    plt.title("Training Loss Comparison")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.grid(True, alpha=0.3)
 
-plt.subplot(1, 3, 3)
-plt.plot(pvsc_hist["val_acc"], label="PVSC-Net Val Acc", linewidth=2)
-plt.plot(cnn_hist["val_acc"], label="VesselCNN Val Acc", linewidth=2, linestyle="--")
-plt.plot(dvsc_hist["val_acc"], label="DVSC-Net Val Acc", linewidth=2, linestyle=":")
-plt.legend()
-plt.title("Validation Accuracy Comparison")
-plt.xlabel("Epoch")
-plt.ylabel("Accuracy")
-plt.grid(True, alpha=0.3)
+    plt.subplot(1, 3, 2)
+    plt.plot(pvsc_hist["train_acc"], label="PVSC-Net Train Acc", linewidth=2)
+    plt.plot(cnn_hist["train_acc"], label="VesselCNN Train Acc", linewidth=2, linestyle="--")
+    plt.plot(dvsc_hist["train_acc"], label="DVSC-Net Train Acc", linewidth=2, linestyle=":")
+    plt.legend()
+    plt.title("Training Accuracy Comparison")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.grid(True, alpha=0.3)
 
-plt.tight_layout()
-plt.savefig("model_comparison_3models.png", dpi=300)
-print("模型对比图已保存至: model_comparison_3models.png")
+    plt.subplot(1, 3, 3)
+    plt.plot(pvsc_hist["val_acc"], label="PVSC-Net Val Acc", linewidth=2)
+    plt.plot(cnn_hist["val_acc"], label="VesselCNN Val Acc", linewidth=2, linestyle="--")
+    plt.plot(dvsc_hist["val_acc"], label="DVSC-Net Val Acc", linewidth=2, linestyle=":")
+    plt.legend()
+    plt.title("Validation Accuracy Comparison")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("model_comparison_3models.png", dpi=300)
+    print("模型对比图已保存至: model_comparison_3models.png")
+else:
+    print("matplotlib not available, skipped plotting model comparison.")
 
 
 # Confusion matrices
-for name, model, fig_name in [
-    ("PVSC-Net", model_pvsc, "confusion_matrix_pvsc.png"),
-    ("VesselCNN", model_cnn, "confusion_matrix_cnn.png"),
-    ("DVSC-Net", model_dvsc, "confusion_matrix_dvsc.png"),
-]:
-    gt, pred = collect_predictions(name, model)
-    cm = confusion_matrix(gt, pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
-    plt.figure(figsize=(10, 8))
-    disp.plot(xticks_rotation=45)
-    plt.title(f"{name} Confusion Matrix")
-    plt.tight_layout()
-    plt.savefig(fig_name)
-    print(f"{name} 混淆矩阵已保存至: {fig_name}")
+if HAS_MPL:
+    try:
+        from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+    except Exception:
+        print("scikit-learn not available, skipped confusion matrix plotting.")
+    else:
+        for name, model, fig_name in [
+            ("PVSC-Net", model_pvsc, "confusion_matrix_pvsc.png"),
+            ("VesselCNN", model_cnn, "confusion_matrix_cnn.png"),
+            ("DVSC-Net", model_dvsc, "confusion_matrix_dvsc.png"),
+        ]:
+            gt, pred = collect_predictions(name, model)
+            cm = confusion_matrix(gt, pred)
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+            plt.figure(figsize=(10, 8))
+            disp.plot(xticks_rotation=45)
+            plt.title(f"{name} Confusion Matrix")
+            plt.tight_layout()
+            plt.savefig(fig_name)
+            print(f"{name} 混淆矩阵已保存至: {fig_name}")
+else:
+    print("matplotlib not available, skipped confusion matrix plotting.")
 
 
 # Final comparison summary
