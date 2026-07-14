@@ -163,7 +163,7 @@ Loss = CrossEntropy(logits, labels)
 
 ### 5.2 训练曲线
 
-![模型对比](model_comparison.png)
+![模型对比](../curve_comparison_three_models.png)
 
 **观察**：
 - PVSC-Net收敛更快更稳定
@@ -173,7 +173,7 @@ Loss = CrossEntropy(logits, labels)
 
 | PVSC-Net | VesselCNN |
 |----------|-----------|
-| ![](confusion_matrix_pvsc.png) | ![](confusion_matrix_cnn.png) |
+| ![](../PVSCNet/matrix_confusion_PVSCNet.png) | ![](../VesselCNN/matrix_confusion_VesselCNN.png) |
 
 **分析**：
 - PVSC-Net对角线元素更集中，各类识别率均>95%
@@ -269,7 +269,7 @@ PVSC: x → CNN → p(z|x) → z → 类别  (概率性)
 3. McFee, B., et al. (2015). librosa: Audio and music signal analysis in python. *Python in Science Conference*.
 
 ## 附录（部分实验代码）
-**model.py（网络设计）**
+**PVSCNet/model_PVSCNet.py（网络设计）**
 ```python
 # 水下声学目标识别的概率变分船舶分类网络（PVSC-Net）
 # Probabilistic Variational Ship Classifier Network

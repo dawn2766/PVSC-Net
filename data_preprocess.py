@@ -1,12 +1,11 @@
 import os
 import librosa
 import numpy as np
-from sklearn.model_selection import train_test_split
 
 DATA_DIR = 'data'  # 原始数据目录
 OUTPUT_DIR = 'processed'  # 保存预处理数据的文件夹
 SAMPLE_RATE = 16000  # 采样率
-CLIP_DURATION = 1  # 每个音频片段的时长（秒）
+CLIP_DURATION = 5  # 每个音频片段的时长（秒）
 CLIP_SAMPLES = SAMPLE_RATE * CLIP_DURATION  # 每个片段的采样点数
 OVERLAP_RATIO = 0.5  # 窗口重叠率50%
 HOP_SAMPLES = int(CLIP_SAMPLES * (1 - OVERLAP_RATIO))  # 移动步长
@@ -50,7 +49,7 @@ def load_and_split_audio(file_path):
 
 def prepare_dataset():
     # 遍历所有类别和音频文件，生成特征和标签
-    X, y, labels = [], [], []
+    X, y, groups, labels = [], [], [], []
     for label_idx, vessel_type in enumerate(sorted(os.listdir(DATA_DIR))):
         vessel_dir = os.path.join(DATA_DIR, vessel_type)
         if not os.path.isdir(vessel_dir):
@@ -61,7 +60,7 @@ def prepare_dataset():
         file_count = 0
         clip_count = 0
         
-        for fname in os.listdir(vessel_dir):
+        for fname in sorted(os.listdir(vessel_dir)):
             if not fname.endswith('.wav'):
                 continue  # 跳过非wav文件
             fpath = os.path.join(vessel_dir, fname)
@@ -73,18 +72,20 @@ def prepare_dataset():
                 mel = extract_mel(clip, SAMPLE_RATE)
                 X.append(mel)
                 y.append(label_idx)
+                groups.append(f"{vessel_type}/{fname}")
         
         print(f"  - 文件数: {file_count}, 生成片段数: {clip_count}")
     
     X = np.array(X)  # (样本数, 频带数, 帧数)
     y = np.array(y)
+    groups = np.array(groups)
     
     print(f"\n总样本数: {len(X)}")
     print(f"特征形状: {X.shape}")
     print(f"类别数: {len(labels)}")
     print(f"类别名称: {labels}")
     
-    return X, y, labels
+    return X, y, groups, labels
 
 def save_dataset():
     # 创建输出目录并保存特征、标签和类别名
@@ -100,10 +101,11 @@ def save_dataset():
     print(f"移动步长: {HOP_SAMPLES} 采样点 ({HOP_SAMPLES / SAMPLE_RATE:.2f} 秒)")
     print("=" * 50 + "\n")
     
-    X, y, labels = prepare_dataset()
+    X, y, groups, labels = prepare_dataset()
     
     np.save(os.path.join(OUTPUT_DIR, 'X.npy'), X)
     np.save(os.path.join(OUTPUT_DIR, 'y.npy'), y)
+    np.save(os.path.join(OUTPUT_DIR, 'groups.npy'), groups)
     np.save(os.path.join(OUTPUT_DIR, 'labels.npy'), labels)
     
     print("\n" + "=" * 50)

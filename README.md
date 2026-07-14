@@ -1,28 +1,34 @@
 # 基于深度学习的水下声学目标分类
 
-本项目实现了基于深度学习的船舶声学分类，利用DeepShip部分数据集中的水下音频数据，通过**PVSC-Net（概率变分船舶分类网络）**自动识别不同类型的船舶。
+本项目实现了基于深度学习的船舶声学分类，包含 **PVSCNet**、**VesselCNN** 和 **DVSCNet** 三种模型，可分别训练并基于统一日志进行对比。
 
 ---
 
 ## 目录结构
 
 ```
-VesselCategorization/
-├── data/                # 数据集目录，每类船舶一个子文件夹，内含若干长wav音频
-├── processed/           # 预处理后特征、标签和类别名保存目录
-│   ├── X.npy
-│   ├── y.npy
-│   └── labels.npy
-├── data_preprocess.py   # 数据预处理与特征提取脚本
-├── train_and_eval.py    # 模型训练、验证与可视化脚本（PyTorch实现）
-├── model.py             # 模型结构文件（PVSC-Net和VesselCNN）
-├── vessel_pvsc.pt       # 训练好的PVSC-Net权重
-├── vessel_cnn.pt        # 训练好的VesselCNN权重
-├── model_comparison.png # 两个模型的对比曲线
-├── confusion_matrix_pvsc.png # PVSC-Net混淆矩阵
-├── confusion_matrix_cnn.png  # VesselCNN混淆矩阵
+Semi-Supervised-VAE-Acoustic-Classification/
+├── data/                         # 原始数据
+├── processed/                    # X.npy、y.npy、groups.npy、labels.npy
+├── PVSCNet/
+│   ├── model_PVSCNet.py
+│   ├── train_PVSCNet.py
+│   ├── checkpoint_best_PVSCNet.pt
+│   ├── checkpoint_latest_PVSCNet.pt
+│   ├── log_best_PVSCNet.json
+│   ├── log_latest_PVSCNet.json
+│   ├── curve_training_PVSCNet.png
+│   └── matrix_confusion_PVSCNet.png
+├── VesselCNN/                    # 同样的模型、训练及产物结构
+├── DVSCNet/                      # 同样的模型、训练及产物结构
+├── training_utils.py             # 三个训练入口共享的数据、训练和记录逻辑
+├── plot_compare_models.py        # 从三个最新日志绘制对比曲线
+├── curve_comparison_three_models.png
+├── data_preprocess.py
 └── README.md
 ```
+
+每个模型目录都采用 `英文标识_模型名` 的命名方式。`latest` 文件记录最近一次训练，`best` 文件仅在相同数据划分、采样和归一化协议下，本次最佳验证准确率超过历史最佳时更新。
 
 ---
 
@@ -38,7 +44,7 @@ VesselCategorization/
    - 所有片段的梅尔频谱组成特征集，类别名转为数字标签。
 
 3. **特征保存**  
-   - 处理结果分别保存为`processed/X.npy`（特征）、`processed/y.npy`（标签）、`processed/labels.npy`（类别名）。
+  - 处理结果分别保存为`processed/X.npy`（特征）、`processed/y.npy`（标签）、`processed/groups.npy`（原始 WAV 来源）和`processed/labels.npy`（类别名）。
 
 运行如下命令完成数据预处理：
 
@@ -57,7 +63,29 @@ python data_preprocess.py
 
 ### 模型架构综述
 
-本项目采用**PVSC-Net（Probabilistic Variational Ship Classifier Network，概率变分船舶分类网络）**作为主模型，并使用**简单CNN网络**作为对照。PVSC-Net是一个专门为水下声学目标识别设计的编码器-分类器架构，通过深度卷积神经网络提取梅尔频谱的时频特征，并通过隐变量表示进行分类。
+本项目采用 **PVSCNet** 和双分支 **DVSCNet** 进行变分声学分类，并使用 **VesselCNN** 作为卷积基线。重构后的 DVSCNet 面向未见录音文件的域泛化，而不是继续扩大普通 CNN 的容量。
+
+DVSCNet 包含两条互补路径：
+
+- **局部二维分支**：深度可分离残差块提取时频纹理，经平均池化和最大池化保留粗粒度二维布局。
+- **频谱上下文分支**：沿时间轴计算均值、标准差和最大值，再用 1D CNN 建模稳定的频谱包络。
+- **域泛化机制**：GroupNorm 避免依赖训练批次统计；MixStyle 在特征空间混合录音域统计；SpecAug、标签平滑和小幅潜变量噪声共同抑制源文件记忆。
+- **轻量融合**：两个分支融合后映射到 32 维变分隐空间，评估时使用均值向量保证预测确定性。
+
+```mermaid
+flowchart LR
+  accTitle: DVSCNet Dual Branch Architecture
+  accDescr: A spectrogram is processed by a local two-dimensional texture branch and a spectral context branch, then fused in a variational classifier.
+
+  input["Mel spectrogram"] --> local["Local 2D branch<br/>MixStyle + separable residual blocks"]
+  input --> normalize["Per-clip normalization"]
+  normalize --> context["Spectral context branch<br/>mean + std + max profiles"]
+  local --> pool["Multi-scale 2D pooling"]
+  pool --> fusion["Feature fusion"]
+  context --> fusion
+  fusion --> latent["Variational latent space"]
+  latent --> classifier["Classifier"]
+```
 
 #### 设计理念
 
@@ -218,8 +246,8 @@ Loss = CrossEntropy(logits, labels)
 #### 超参数配置
 
 - **学习率**：1e-4（使用Adam优化器）
-- **批大小**：128
-- **训练轮数**：80
+- **批大小**：256
+- **训练轮数**：100
 - **训练/验证划分**：80% / 20%（**分层采样**，确保各类别比例一致）
 - **隐变量维度**：16
 - **Dropout概率**：0.3（在分类器中）
@@ -228,83 +256,96 @@ Loss = CrossEntropy(logits, labels)
 
 #### 数据集划分策略
 
-使用**sklearn的stratified split**确保训练集和验证集中各类别的比例严格一致：
+共享训练工具采用**类别分层的原始文件级划分**。同一个 WAV 生成的全部 50% 重叠窗口只能出现在训练集或验证集一侧：
 
 ```python
-train_indices, val_indices = train_test_split(
-    indices, 
-    test_size=0.2, 
-    stratify=y,      # 关键：按类别分层
-    random_state=42
+train_indices, val_indices = stratified_group_split(
+  targets=y,
+  groups=source_wav,
+  val_split=0.2,
+  seed=42,
 )
 ```
 
 **优势**：
-- 避免某些类别过多出现在训练集或验证集
-- 验证集能更准确反映模型的真实泛化能力
-- 提高训练稳定性，减少评估偏差
+- 消除相邻重叠窗口跨集合造成的数据泄漏
+- 直接评估模型对未见原始录音的泛化能力
+- 训练集 MinMax 统计量不读取验证文件
+- 训练采样同时均衡类别和原始 WAV，避免长录音支配梯度
 
 #### 训练过程
 
-训练脚本会输出详细的数据集统计信息：
-```
-==============================================================
-数据集划分统计 (分层采样):
-总样本数: 1000
-训练集样本数: 800
-验证集样本数: 200
---------------------------------------------------------------
-类别 'Cargo':
-  总数: 200 | 训练集: 160 (80.0%) | 验证集: 40 (20.0%)
-类别 'Passengership':
-  总数: 200 | 训练集: 160 (80.0%) | 验证集: 40 (20.0%)
-...
-==============================================================
+在项目根目录分别运行：
 
-第一阶段: 开始训练 PVSC-Net 模型
-Epoch 1/80 - Train Loss: 1.6094 - Train Acc: 0.2000 - Val Acc: 0.2500
-Epoch 2/80 - Train Loss: 1.4523 - Train Acc: 0.3500 - Val Acc: 0.4000
-...
-Epoch 80/80 - Train Loss: 0.0234 - Train Acc: 0.9950 - Val Acc: 0.9800
-
-PVSC-Net 模型训练完成，权重已保存至: vessel_pvsc.pt
-最终验证准确率: 0.9800
-
-第二阶段: 开始训练 VesselCNN 模型（对照）
-Epoch 1/80 - Train Loss: 1.6012 - Train Acc: 0.2050 - Val Acc: 0.2450
-...
+```bash
+python PVSCNet/train_PVSCNet.py
+python VesselCNN/train_VesselCNN.py
+python DVSCNet/train_DVSCNet.py
 ```
 
-### 3. 结果可视化
+所有入口都支持 `--epochs`、`--batch-size`、`--learning-rate`、`--val-split`、`--seed` 和 `--num-workers`。例如：
 
-训练完成后会自动生成：
-- `model_comparison.png`：两个模型的损失和准确率对比曲线
-- `confusion_matrix_pvsc.png`：PVSC-Net的混淆矩阵
-- `confusion_matrix_cnn.png`：VesselCNN的混淆矩阵
+```bash
+python DVSCNet/train_DVSCNet.py --epochs 30 --batch-size 64 --learning-rate 3e-4 --seed 2026
+```
+
+DVSCNet 还支持 `--z-dim`、`--weight-decay`、`--latent-noise-scale` 和 `--disable-spec-augment`。
+
+每次训练结束后，模型目录会保存：
+
+- `checkpoint_latest_模型名.pt`：最近一次训练结束时的权重
+- `checkpoint_best_模型名.pt`：所有历史训练中的最佳权重
+- `log_latest_模型名.json`：最近一次训练的配置、完整曲线和结果摘要
+- `log_best_模型名.json`：历史最佳训练记录
+- `curve_training_模型名.png`：本次训练损失和准确率曲线
+- `matrix_confusion_模型名.png`：本次最佳 epoch 权重的混淆矩阵
+
+三个模型训练完成后，在项目根目录运行：
+
+```bash
+python plot_compare_models.py
+```
+
+脚本读取三个 `log_latest_模型名.json`，生成根目录下的 `curve_comparison_three_models.png`。
 
 ---
 
 ## 结果可视化与模型表现
 
+### 文件级无泄漏对比
+
+最终对比使用相同的文件级分层划分、类别与源文件均衡采样、仅训练集拟合的 MinMax 归一化，以及种子 2026。验证集包含 14 个训练期间从未出现的原始 WAV，共 457 个片段。
+
+| 模型 | 参数量 | 最佳轮次 | 验证准确率 | 宏平均 F1 |
+| --- | ---: | ---: | ---: | ---: |
+| PVSCNet | 5,687,140 | 13 | 59.30% | 59.78% |
+| DVSCNet | 498,948 | 23 | **80.74%** | **81.61%** |
+
+DVSCNet 的验证准确率提升 **21.44 个百分点**，参数量减少约 **91.2%**。PVSCNet 与 DVSCNet 在评估模式下都使用潜变量均值，保证同一 checkpoint 的结果可重复。该结果只适用于当前 63 个原始录音的文件级留出实验；由于源文件数量仍然有限，后续应使用更多录音和多次 GroupKFold 评估置信区间。完整迭代记录见 [docs/DVSCNet_Redesign_Experiment.md](docs/DVSCNet_Redesign_Experiment.md)。
+
 ### 模型对比曲线
 
-两个模型的训练过程对比如下图所示：
+三个模型最近一次训练过程的对比如下图所示：
 
-![模型对比曲线](model_comparison.png)
+![模型对比曲线](curve_comparison_three_models.png)
 
-- **分析**：PVSC-Net通过隐变量学习实现更好的特征表示，相比简单CNN具有更高的准确率和更好的收敛性。
+- **分析**：曲线应结合日志中的 `split_strategy`、`train_sampling` 和 `feature_normalization` 解读，只有协议一致的运行可以直接比较。
 
 ### 混淆矩阵
 
 #### PVSC-Net 混淆矩阵
 
-![PVSC-Net混淆矩阵](confusion_matrix_pvsc.png)
+![PVSC-Net混淆矩阵](PVSCNet/matrix_confusion_PVSCNet.png)
 
 #### VesselCNN 混淆矩阵
 
-![VesselCNN混淆矩阵](confusion_matrix_cnn.png)
+![VesselCNN混淆矩阵](VesselCNN/matrix_confusion_VesselCNN.png)
 
-- **分析**：PVSC-Net在各类别上的分类准确性普遍高于简单CNN，证明了隐变量学习的有效性。
+#### DVSCNet 混淆矩阵
+
+![DVSCNet混淆矩阵](DVSCNet/matrix_confusion_DVSCNet.png)
+
+- **分析**：最终文件级验证中，DVSCNet 在四个类别上的召回率均高于 PVSCNet，主要剩余混淆发生在 Cargo 与 Tanker 之间。
 
 ---
 
