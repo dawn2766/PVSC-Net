@@ -9,7 +9,7 @@
 ```
 Semi-Supervised-VAE-Acoustic-Classification/
 ├── data/                         # 原始数据
-├── processed/                    # X.npy、y.npy、groups.npy、labels.npy
+├── processed/                    # 特征、标签、原始 WAV 分组、窗口起点和预处理配置
 ├── PVSCNet/
 │   ├── model_PVSCNet.py
 │   ├── train_PVSCNet.py
@@ -39,23 +39,28 @@ Semi-Supervised-VAE-Acoustic-Classification/
 
 2. **音频切分与特征提取**  
    - 使用`librosa`读取每个音频文件，采用**移动窗口法**按5秒（可调）切分为多个小片段。
-   - **窗口重叠率**：50%，即相邻窗口重叠2.5秒，增加数据量并提供更好的时序覆盖。
+  - **窗口重叠率**：75%，步长为1.25秒；内部窗口在步长的20%范围内做带种子的随机抖动（默认±0.25秒）。
+  - 首尾窗口固定覆盖录音边界，中间窗口起点随`--seed`变化；同一随机种子可以完全复现。
    - 对每个片段提取梅尔频谱（Mel-spectrogram, n_mels=64），并转为dB刻度。
    - 所有片段的梅尔频谱组成特征集，类别名转为数字标签。
 
 3. **特征保存**  
-  - 处理结果分别保存为`processed/X.npy`（特征）、`processed/y.npy`（标签）、`processed/groups.npy`（原始 WAV 来源）和`processed/labels.npy`（类别名）。
+  - `X.npy`与`y.npy`：梅尔频谱和类别标签。
+  - `groups.npy`：每个窗口对应的原始 WAV，用于文件级互斥划分。
+  - `window_starts.npy`：窗口在原始 WAV 中的起始采样点，用于审计重复和越界。
+  - `preprocess_config.json`：重叠率、抖动、随机种子和数据指纹的来源配置。
 
 运行如下命令完成数据预处理：
 
 ```bash
-python data_preprocess.py
+python data_preprocess.py --overlap-ratio 0.75 --jitter-ratio 0.2 --seed 2026
 ```
 
 **数据增强效果**：
 - 原方法：10秒音频 → 2个片段（0-5秒，5-10秒）
-- 移动窗口法（50%重叠）：10秒音频 → 3个片段（0-5秒，2.5-7.5秒，5-10秒）
-- 数据量提升约**2倍**，提高模型泛化能力
+- 75%重叠法：10秒音频约生成5个片段，并在不越界的前提下随机扰动内部窗口起点
+- 当前数据由2,264个窗口增加到**4,416个窗口**，增长约95.1%
+- 增加的是同一录音内的时间覆盖，不等同于新增独立录音；泛化评估仍以63个原始 WAV 为分组单位
 
 ---
 
@@ -314,14 +319,15 @@ python plot_compare_models.py
 
 ### 文件级无泄漏对比
 
-最终对比使用相同的文件级分层划分、类别与源文件均衡采样、仅训练集拟合的 MinMax 归一化，以及种子 2026。验证集包含 14 个训练期间从未出现的原始 WAV，共 457 个片段。
+最终对比使用相同的75%重叠预处理、文件级分层随机划分、类别与源文件均衡采样、仅训练集拟合的 MinMax 归一化，以及种子2026。训练集和测试集包含51/12个互斥原始 WAV，对应3,527/889个窗口，源文件交集为0。数据协议指纹为`5619a4b7888494de`。
 
 | 模型 | 参数量 | 最佳轮次 | 验证准确率 | 宏平均 F1 |
 | --- | ---: | ---: | ---: | ---: |
-| PVSCNet | 5,687,140 | 13 | 59.30% | 59.78% |
-| DVSCNet | 498,948 | 23 | **80.74%** | **81.61%** |
+| PVSCNet | 5,687,140 | 7 | 74.13% | 70.82% |
+| VesselCNN | - | 11 | 74.35% | 75.85% |
+| DVSCNet | 498,948 | 10 | **82.00%** | **83.29%** |
 
-DVSCNet 的验证准确率提升 **21.44 个百分点**，参数量减少约 **91.2%**。PVSCNet 与 DVSCNet 在评估模式下都使用潜变量均值，保证同一 checkpoint 的结果可重复。该结果只适用于当前 63 个原始录音的文件级留出实验；由于源文件数量仍然有限，后续应使用更多录音和多次 GroupKFold 评估置信区间。完整迭代记录见 [docs/DVSCNet_Redesign_Experiment.md](docs/DVSCNet_Redesign_Experiment.md)。
+DVSCNet 相对 PVSCNet 提升 **7.87 个百分点**，相对 VesselCNN 提升 **7.65 个百分点**，参数量比 PVSCNet 减少约 **91.2%**。PVSCNet 与 DVSCNet 在评估模式下都使用潜变量均值，保证同一 checkpoint 的结果可重复。由于独立源文件仍只有63个，后续应增加真实录音并采用多次 GroupKFold 评估置信区间。完整迭代记录见 [docs/DVSCNet_Redesign_Experiment.md](docs/DVSCNet_Redesign_Experiment.md)。
 
 ### 模型对比曲线
 

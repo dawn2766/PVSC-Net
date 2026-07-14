@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -326,6 +327,7 @@ def _read_best_accuracy(
     split_strategy: str,
     train_sampling: str,
     feature_normalization: str,
+    preprocessing_signature: str,
 ) -> float:
     if not path.exists():
         return float("-inf")
@@ -336,6 +338,7 @@ def _read_best_accuracy(
             dataset.get("split_strategy") != split_strategy
             or dataset.get("train_sampling") != train_sampling
             or dataset.get("feature_normalization") != feature_normalization
+            or dataset.get("preprocessing_signature") != preprocessing_signature
         ):
             return float("-inf")
         return float(payload["result_summary"]["best_val_accuracy"])
@@ -361,6 +364,24 @@ def train_experiment(
     train_loader, val_loader, class_names, input_shape, targets, groups, train_indices, val_indices = _load_data(
         project_root, config
     )
+    preprocess_config_path = project_root / "processed" / "preprocess_config.json"
+    if not preprocess_config_path.exists():
+        raise FileNotFoundError(
+            "processed/preprocess_config.json is required; rerun data_preprocess.py"
+        )
+    preprocess_config = json.loads(preprocess_config_path.read_text(encoding="utf-8"))
+    preprocessing_signature = hashlib.sha256(
+        json.dumps(preprocess_config, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+    train_source_file_names = sorted(np.unique(groups[train_indices]).tolist())
+    val_source_file_names = sorted(np.unique(groups[val_indices]).tolist())
+    source_file_overlap = sorted(set(train_source_file_names) & set(val_source_file_names))
+    if source_file_overlap:
+        raise RuntimeError(f"Source-file leakage detected: {source_file_overlap}")
+    if preprocess_config.get("num_samples") != len(targets):
+        raise ValueError("Preprocessing metadata sample count does not match processed arrays")
+    if preprocess_config.get("num_source_files") != len(np.unique(groups)):
+        raise ValueError("Preprocessing metadata source-file count does not match groups.npy")
     split_strategy = "file_group_stratified"
     train_sampling = "class_and_source_file_balanced"
     feature_normalization = "train_only_global_minmax"
@@ -398,6 +419,8 @@ def train_experiment(
                     "model_state_dict": model.state_dict(),
                     "class_names": class_names,
                     "input_shape": input_shape,
+                    "preprocessing_signature": preprocessing_signature,
+                    "split_seed": config.seed,
                 },
                 run_best_path,
             )
@@ -416,6 +439,8 @@ def train_experiment(
             "model_state_dict": model.state_dict(),
             "class_names": class_names,
             "input_shape": input_shape,
+            "preprocessing_signature": preprocessing_signature,
+            "split_seed": config.seed,
         },
         latest_checkpoint_path,
     )
@@ -442,12 +467,17 @@ def train_experiment(
             "split_strategy": split_strategy,
             "train_sampling": train_sampling,
             "feature_normalization": feature_normalization,
+            "preprocessing_signature": preprocessing_signature,
+            "preprocessing": preprocess_config,
             "total_samples": int(len(targets)),
             "total_source_files": int(len(np.unique(groups))),
             "train_samples": int(len(train_indices)),
             "val_samples": int(len(val_indices)),
             "train_source_files": int(len(np.unique(groups[train_indices]))),
             "val_source_files": int(len(np.unique(groups[val_indices]))),
+            "source_file_overlap": source_file_overlap,
+            "train_source_file_names": train_source_file_names,
+            "val_source_file_names": val_source_file_names,
         },
         "history": history,
         "result_summary": {
@@ -469,6 +499,7 @@ def train_experiment(
         split_strategy,
         train_sampling,
         feature_normalization,
+        preprocessing_signature,
     )
     _write_json(latest_log_path, record)
     if run_best_accuracy > previous_best_accuracy:

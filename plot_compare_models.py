@@ -36,6 +36,29 @@ def load_latest_logs() -> dict:
         if missing_metrics:
             raise ValueError(f"{log_path.name} is missing metrics: {sorted(missing_metrics)}")
         records[model_name] = record
+
+    protocol_fields = (
+        "preprocessing_signature",
+        "split_strategy",
+        "train_sampling",
+        "feature_normalization",
+    )
+    reference_name = next(iter(records))
+    reference_dataset = records[reference_name].get("dataset", {})
+    for field in protocol_fields:
+        reference_value = reference_dataset.get(field)
+        if reference_value is None:
+            raise ValueError(f"{reference_name} log is missing dataset protocol field: {field}")
+        mismatches = {
+            model_name: record.get("dataset", {}).get(field)
+            for model_name, record in records.items()
+            if record.get("dataset", {}).get(field) != reference_value
+        }
+        if mismatches:
+            raise ValueError(
+                f"Cannot compare logs with different {field}: "
+                f"expected {reference_value!r}, got {mismatches}"
+            )
     return records
 
 

@@ -61,10 +61,13 @@ flowchart TB
 
 | 项目 | 设置 |
 | --- | --- |
-| 数据 | 2,264 个 5 秒梅尔频谱片段，来自 63 个 WAV |
+| 数据 | 4,416个5秒梅尔频谱窗口，来自63个WAV |
+| 窗口 | 75%重叠，1.25秒步长，内部起点最多抖动±0.25秒 |
+| 预处理随机种子 | 2026，可复现窗口起点 |
+| 数据协议指纹 | `5619a4b7888494de` |
 | 划分 | 按类别分层的原始 WAV 文件级互斥划分 |
-| 训练/验证文件 | 49 / 14 |
-| 训练/验证片段 | 1,807 / 457 |
+| 训练/测试文件 | 51 / 12，交集为0 |
+| 训练/测试窗口 | 3,527 / 889 |
 | 采样 | 类别与源文件双重均衡 |
 | 归一化 | 仅用训练文件拟合全局 MinMax |
 | 优化器 | AdamW，学习率 $3\times10^{-4}$，权重衰减 $10^{-4}$ |
@@ -76,17 +79,20 @@ flowchart TB
 
 | 模型 | 准确率 | 宏平均 F1 | Cargo 召回 | Passengership 召回 | Tanker 召回 | Tug 召回 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| PVSCNet | 59.30% | 59.78% | 79.38% | 70.00% | 38.17% | 40.79% |
-| DVSCNet | **80.74%** | **81.61%** | **89.38%** | **68.89%** | **76.34%** | **84.21%** |
+| PVSCNet | 74.13% | 70.82% | 91.14% | 51.45% | 83.67% | 48.32% |
+| VesselCNN | 74.35% | 75.85% | 67.09% | 71.10% | 70.52% | 100.00% |
+| DVSCNet | **82.00%** | **83.29%** | **90.19%** | **70.52%** | **69.72%** | **98.66%** |
 
-DVSCNet 在保留验证上提高 21.44 个百分点，宏平均 F1 提高 21.83 个百分点；Cargo、Tanker 和 Tug 的召回率明显提高，Passengership 召回率低 1.11 个百分点但精确率达到 100%。PVSCNet 与 DVSCNet 的评估阶段均使用潜变量均值，避免随机采样导致 checkpoint 复算漂移。该结论证明当前架构在本数据的文件级留出协议下优于 PVSCNet，但不等同于总体性能的统计显著性证明：验证集只有 14 个源文件，特别是 Tug 类只有 3 个源文件。下一阶段应增加独立录音，并采用重复 StratifiedGroupKFold 报告均值、标准差和置信区间。
+75%重叠与可复现窗口抖动将窗口数从2,264提高到4,416。DVSCNet相对PVSCNet提高7.87个百分点，相对VesselCNN提高7.65个百分点。所有模型使用完全相同的12个测试WAV，训练和测试源文件交集为0，因此相邻重叠窗口不会跨集合泄漏。
+
+需要强调：窗口数增长不意味着独立信息量等比例增长。当前仍只有63个独立录音，Tug类只有3个源文件；重叠窗口主要改善单个录音内部的时间覆盖。下一阶段仍应增加真实独立录音，并采用重复StratifiedGroupKFold报告均值、标准差和置信区间。
 
 ## 复现
 
 在项目根目录运行：
 
 ```bash
-python data_preprocess.py
+python data_preprocess.py --overlap-ratio 0.75 --jitter-ratio 0.2 --seed 2026
 python PVSCNet/train_PVSCNet.py --epochs 30 --batch-size 64 --learning-rate 3e-4 --seed 2026
 python DVSCNet/train_DVSCNet.py --epochs 30 --batch-size 64 --learning-rate 3e-4 --seed 2026
 ```
@@ -97,6 +103,7 @@ python DVSCNet/train_DVSCNet.py --epochs 30 --batch-size 64 --learning-rate 3e-4
 {
   "split_strategy": "file_group_stratified",
   "train_sampling": "class_and_source_file_balanced",
-  "feature_normalization": "train_only_global_minmax"
+  "feature_normalization": "train_only_global_minmax",
+  "preprocessing_signature": "5619a4b7888494de"
 }
 ```
