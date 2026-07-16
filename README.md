@@ -68,28 +68,29 @@ python data_preprocess.py --overlap-ratio 0.75 --jitter-ratio 0.2 --seed 2026
 
 ### 模型架构综述
 
-本项目采用 **PVSCNet** 和双分支 **DVSCNet** 进行变分声学分类，并使用 **VesselCNN** 作为卷积基线。重构后的 DVSCNet 面向未见录音文件的域泛化，而不是继续扩大普通 CNN 的容量。
+本项目采用 **PVSCNet** 和单模型 **DVSCNet** 进行变分声学分类，并使用 **VesselCNN** 作为卷积基线。重构后的 DVSCNet 面向未见录音文件的域泛化，只有一个模型实例、一个变分瓶颈和一个分类输出头，不依赖旧模型集成或 logits 融合。
 
-DVSCNet 包含两条互补路径：
+DVSCNet 在同一网络内联合建模时频纹理与频谱上下文：
 
-- **局部二维分支**：深度可分离残差块提取时频纹理，经平均池化和最大池化保留粗粒度二维布局。
-- **频谱上下文分支**：沿时间轴计算均值、标准差和最大值，再用 1D CNN 建模稳定的频谱包络。
-- **域泛化机制**：GroupNorm 避免依赖训练批次统计；MixStyle 在特征空间混合录音域统计；SpecAug、标签平滑和小幅潜变量噪声共同抑制源文件记忆。
-- **轻量融合**：两个分支融合后映射到 32 维变分隐空间，评估时使用均值向量保证预测确定性。
+- **多尺度轴向编码器**：在同一特征流中组合 $3\times3$、$7\times1$ 和 $1\times9$ 深度卷积，分别捕捉局部纹理、窄带谐波和长时间调制，并用频率/时间轴注意力重标定特征。
+- **二维布局与全局统计**：从同一编码特征图提取 $4\times5$ 平均/最大池化布局，以及均值、标准差和最大值，避免只靠全局池化丢失 Cargo 与 Tanker 的时频位置差异。
+- **归一化频谱上下文**：对逐片段标准化后的频率均值、标准差和峰值进行注意力统计编码，并在唯一的融合层中与二维特征联合建模；该模块不产生独立预测，因此不是第二个模型。
+- **域泛化与变分正则**：GroupNorm、MixStyle、逐样本 SpecAug、标签平滑、受控潜变量噪声和 KL 信息瓶颈共同抑制源文件记忆；评估时使用 $\mu$ 保证预测确定性。
 
 ```mermaid
 flowchart LR
-  accTitle: DVSCNet Dual Branch Architecture
-  accDescr: A spectrogram is processed by a local two-dimensional texture branch and a spectral context branch, then fused in a variational classifier.
+  accTitle: Single-Model DVSCNet Architecture
+  accDescr: One DVSCNet extracts axial time-frequency features and normalized spectral statistics, fuses them before one variational bottleneck, and produces one classification output.
 
-  input["Mel spectrogram"] --> local["Local 2D branch<br/>MixStyle + separable residual blocks"]
-  input --> normalize["Per-clip normalization"]
-  normalize --> context["Spectral context branch<br/>mean + std + max profiles"]
-  local --> pool["Multi-scale 2D pooling"]
-  pool --> fusion["Feature fusion"]
+  input["Log-Mel spectrogram"] --> augment["SpecAug"]
+  augment --> encoder["Multi-scale axial encoder<br/>3x3 + 7x1 + 1x9"]
+  encoder --> layout["2D layout and global statistics"]
+  augment --> normalize["Per-clip normalization"]
+  normalize --> context["Attentive spectral statistics"]
+  layout --> fusion["Single feature fusion layer"]
   context --> fusion
-  fusion --> latent["Variational latent space"]
-  latent --> classifier["Classifier"]
+  fusion --> latent["Variational bottleneck"]
+  latent --> classifier["Single classifier head"]
 ```
 
 #### 设计理念
@@ -237,31 +238,30 @@ FC3:          (num_classes,)  # 输出logits
 
 #### 损失函数
 
-PVSC-Net仅使用**分类损失（交叉熵）**进行端到端训练：
+PVSC-Net 和 VesselCNN 使用带标签平滑的交叉熵。DVSCNet 在分类损失之外加入小权重 KL 信息瓶颈：
 
-```python
-Loss = CrossEntropy(logits, labels)
-```
+$$
+\mathcal{L}_{\mathrm{DVSC}} = \mathcal{L}_{\mathrm{CE}} + \beta D_{\mathrm{KL}}\left(q_\phi(z\mid x)\,\|\,\mathcal{N}(0,I)\right),\qquad \beta=5\times10^{-4}.
+$$
 
-**为什么不使用重构损失和KL散度？**
-- PVSC-Net专注于分类任务，不需要生成/重构能力
-- 隐变量的正则化通过Dropout和BatchNorm实现
-- 简化的损失函数使训练更加稳定和高效
+DVSCNet 不引入解码器和重构损失，KL 项只约束判别隐空间，避免方差分支在仅有交叉熵时退化为无约束噪声源。
 
 #### 超参数配置
 
-- **学习率**：1e-4（使用Adam优化器）
-- **批大小**：256
-- **训练轮数**：100
-- **训练/验证划分**：80% / 20%（**分层采样**，确保各类别比例一致）
-- **隐变量维度**：16
-- **Dropout概率**：0.3（在分类器中）
+- **学习率**：默认1e-4；当前最佳 DVSCNet 运行使用3e-4（AdamW和验证损失自适应退火）
+- **批大小**：默认256
+- **训练轮数**：默认100，验证损失连续停滞时提前停止
+- **训练/验证划分**：80% / 20%（**按源WAV分组的分层划分**）
+- **隐变量维度**：PVSCNet默认16，DVSCNet默认32
+- **Dropout概率**：0.4
+- **DVSCNet KL权重**：5e-4
+- **DVSCNet权重衰减**：1e-3
 - **随机种子**：42（确保可复现）
 - **设备**：自动检测 GPU 或 CPU
 
 #### 数据集划分策略
 
-共享训练工具采用**类别分层的原始文件级划分**。同一个 WAV 生成的全部 50% 重叠窗口只能出现在训练集或验证集一侧：
+共享训练工具采用**类别分层的原始文件级划分**。同一个 WAV 生成的全部75%重叠窗口只能出现在训练集或验证集一侧：
 
 ```python
 train_indices, val_indices = stratified_group_split(
@@ -276,7 +276,9 @@ train_indices, val_indices = stratified_group_split(
 - 消除相邻重叠窗口跨集合造成的数据泄漏
 - 直接评估模型对未见原始录音的泛化能力
 - 训练集 MinMax 统计量不读取验证文件
-- 训练采样同时均衡类别和原始 WAV，避免长录音支配梯度
+- 训练采样同时均衡类别和原始 WAV；每轮每个源 WAV 默认最多抽取128个不重复窗口，避免长录音和相邻重叠窗口支配梯度
+- 验证损失停滞时自动降低学习率，并使用梯度裁剪稳定更新
+- 使用验证损失早停，最终评估加载本次运行中最佳验证准确率对应的权重
 
 #### 训练过程
 
@@ -288,13 +290,13 @@ python VesselCNN/train_VesselCNN.py
 python DVSCNet/train_DVSCNet.py
 ```
 
-所有入口都支持 `--epochs`、`--batch-size`、`--learning-rate`、`--val-split`、`--seed` 和 `--num-workers`。例如：
+所有入口都支持 `--epochs`、`--batch-size`、`--learning-rate`、`--val-split`、`--seed`、`--num-workers`、`--windows-per-source`、`--early-stopping-patience` 和 `--gradient-clip-norm`。例如：
 
 ```bash
 python DVSCNet/train_DVSCNet.py --epochs 30 --batch-size 64 --learning-rate 3e-4 --seed 2026
 ```
 
-DVSCNet 还支持 `--z-dim`、`--weight-decay`、`--latent-noise-scale` 和 `--disable-spec-augment`。
+DVSCNet 还支持 `--z-dim`、`--dropout`、`--kl-weight`、`--weight-decay`、`--latent-noise-scale` 和 `--disable-spec-augment`。
 
 每次训练结束后，模型目录会保存：
 
@@ -323,11 +325,11 @@ python plot_compare_models.py
 
 | 模型 | 参数量 | 最佳轮次 | 验证准确率 | 宏平均 F1 |
 | --- | ---: | ---: | ---: | ---: |
-| PVSCNet | 5,687,140 | 7 | 74.13% | 70.82% |
-| VesselCNN | - | 11 | 74.35% | 75.85% |
-| DVSCNet | 498,948 | 10 | **82.00%** | **83.29%** |
+| PVSCNet | 531,108 | 14 | **78.40%** | **80.00%** |
+| VesselCNN | 617,828 | 22 | 77.62% | 78.68% |
+| DVSCNet | 697,637 | 27 | **84.59%** | **84.34%** |
 
-DVSCNet 相对 PVSCNet 提升 **7.87 个百分点**，相对 VesselCNN 提升 **7.65 个百分点**，参数量比 PVSCNet 减少约 **91.2%**。PVSCNet 与 DVSCNet 在评估模式下都使用潜变量均值，保证同一 checkpoint 的结果可重复。由于独立源文件仍只有63个，后续应增加真实录音并采用多次 GroupKFold 评估置信区间。完整迭代记录见 [docs/DVSCNet_Redesign_Experiment.md](docs/DVSCNet_Redesign_Experiment.md)。
+这组结果来自同一文件级划分和无放回源文件均衡采样，不能与旧版窗口随机划分或有放回重复采样的曲线直接比较。重构后的单模型 DVSCNet 相比旧架构的77.95%提高6.64个百分点，相比当前 PVSCNet 提高6.19个百分点。PVSCNet 与 DVSCNet 在评估模式下都使用潜变量均值，保证同一 checkpoint 的结果可重复。当前 Tug 类仅有3个源录音，本次划分为2个训练、1个验证，单次验证指标具有较高方差；后续应增加真实录音并采用重复 GroupKFold 评估置信区间。完整迭代记录见 [docs/DVSCNet_Redesign_Experiment.md](docs/DVSCNet_Redesign_Experiment.md)。
 
 ### 模型对比曲线
 
@@ -351,7 +353,7 @@ DVSCNet 相对 PVSCNet 提升 **7.87 个百分点**，相对 VesselCNN 提升 **
 
 ![DVSCNet混淆矩阵](DVSCNet/matrix_confusion_DVSCNet.png)
 
-- **分析**：最终文件级验证中，DVSCNet 在四个类别上的召回率均高于 PVSCNet，主要剩余混淆发生在 Cargo 与 Tanker 之间。
+- **分析**：最终文件级验证中，DVSCNet 的 Cargo、Passengership、Tanker 和 Tug 召回率分别为90.51%、67.63%、82.47%和95.30%。主要剩余混淆发生在 Passengership 与 Tanker 之间。
 
 ---
 
@@ -381,10 +383,10 @@ pip install librosa numpy torch matplotlib scikit-learn
 
 ## 项目特色
 
-1. **移动窗口采样**：50%重叠率有效增加数据量
+1. **移动窗口采样**：75%重叠率提高单个录音内部的时间覆盖
 2. **分层数据划分**：确保训练/验证集类别比例一致
-3. **PVSC-Net架构**：概率变分方法显式建模声学特征的变异性
-4. **端到端训练**：简化的损失函数，训练更稳定
+3. **单模型DVSC-Net**：轴向时频卷积、注意力统计与唯一变分分类头联合建模
+4. **端到端训练**：分类损失与轻量KL信息瓶颈共同优化
 5. **完整可复现**：固定所有随机种子，结果可重现
 6. **详细日志**：训练过程输出详细的统计信息
 7. **模型对比**：同时训练PVSC-Net和简单CNN，直观展示性能差异

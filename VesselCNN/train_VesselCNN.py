@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,9 @@ from training_utils import TrainingConfig, create_argument_parser, train_experim
 
 
 def main() -> None:
-    args = create_argument_parser("VesselCNN").parse_args()
+    parser = create_argument_parser("VesselCNN")
+    parser.add_argument("--weight-decay", type=float, default=float(os.getenv("WEIGHT_DECAY", "1e-4")))
+    args = parser.parse_args()
     config = TrainingConfig(
         epochs=args.epochs,
         batch_size=args.batch_size,
@@ -22,6 +25,11 @@ def main() -> None:
         val_split=args.val_split,
         seed=args.seed,
         num_workers=args.num_workers,
+        windows_per_source=args.windows_per_source,
+        early_stopping_patience=(
+            None if args.disable_early_stopping else args.early_stopping_patience
+        ),
+        gradient_clip_norm=args.gradient_clip_norm,
     )
     train_experiment(
         model_name="VesselCNN",
@@ -29,8 +37,13 @@ def main() -> None:
         model_dir=MODEL_DIR,
         config=config,
         build_model=lambda num_classes, input_shape: VesselCNN(num_classes, input_shape),
-        build_optimizer=lambda parameters: optim.Adam(parameters, lr=config.learning_rate),
+        build_optimizer=lambda parameters: optim.AdamW(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=args.weight_decay,
+        ),
         criterion=compute_loss,
+        extra_config={"weight_decay": args.weight_decay},
     )
 
 

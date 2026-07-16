@@ -17,11 +17,13 @@ from training_utils import TrainingConfig, create_argument_parser, train_experim
 def main() -> None:
     parser = create_argument_parser("DVSCNet")
     parser.add_argument("--z-dim", type=int, default=int(os.getenv("DVSC_Z_DIM", "32")))
-    parser.add_argument("--weight-decay", type=float, default=float(os.getenv("WEIGHT_DECAY", "1e-4")))
+    parser.add_argument("--dropout", type=float, default=float(os.getenv("DVSC_DROPOUT", "0.4")))
+    parser.add_argument("--kl-weight", type=float, default=float(os.getenv("DVSC_KL_WEIGHT", "5e-4")))
+    parser.add_argument("--weight-decay", type=float, default=float(os.getenv("WEIGHT_DECAY", "1e-3")))
     parser.add_argument(
         "--latent-noise-scale",
         type=float,
-        default=float(os.getenv("DVSC_LATENT_NOISE_SCALE", "0.15")),
+        default=float(os.getenv("DVSC_LATENT_NOISE_SCALE", "0.05")),
     )
     parser.add_argument("--disable-spec-augment", action="store_true")
     args = parser.parse_args()
@@ -32,6 +34,11 @@ def main() -> None:
         val_split=args.val_split,
         seed=args.seed,
         num_workers=args.num_workers,
+        windows_per_source=args.windows_per_source,
+        early_stopping_patience=(
+            None if args.disable_early_stopping else args.early_stopping_patience
+        ),
+        gradient_clip_norm=args.gradient_clip_norm,
     )
     train_experiment(
         model_name="DVSCNet",
@@ -41,7 +48,9 @@ def main() -> None:
         build_model=lambda num_classes, _input_shape: DVSCNet(
             num_classes=num_classes,
             z_dim=args.z_dim,
+            dropout=args.dropout,
             latent_noise_scale=args.latent_noise_scale,
+            kl_weight=args.kl_weight,
             use_spec_augment=not args.disable_spec_augment,
         ),
         build_optimizer=lambda parameters: optim.AdamW(
@@ -51,7 +60,10 @@ def main() -> None:
         ),
         criterion=compute_loss,
         extra_config={
+            "architecture_version": "single_stream_axial_context_v3",
             "z_dim": args.z_dim,
+            "dropout": args.dropout,
+            "kl_weight": args.kl_weight,
             "weight_decay": args.weight_decay,
             "latent_noise_scale": args.latent_noise_scale,
             "use_spec_augment": not args.disable_spec_augment,

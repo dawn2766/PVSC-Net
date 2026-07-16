@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
-from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
+from torch.utils.data import DataLoader, Dataset, Sampler, Subset
 
 
 @dataclass
@@ -27,6 +27,68 @@ class TrainingConfig:
     val_split: float
     seed: int
     num_workers: int
+    windows_per_source: int = 128
+    early_stopping_patience: Optional[int] = 10
+    gradient_clip_norm: float = 5.0
+
+
+class BalancedGroupSampler(Sampler[int]):
+    def __init__(
+        self,
+        targets: np.ndarray,
+        groups: np.ndarray,
+        windows_per_source: int,
+        seed: int,
+    ):
+        if windows_per_source < 1:
+            raise ValueError("windows_per_source must be at least 1")
+        self.targets = np.asarray(targets)
+        self.groups = np.asarray(groups)
+        self.windows_per_source = windows_per_source
+        self.seed = seed
+        self.epoch = 0
+        self.class_ids = np.unique(self.targets)
+        self.samples_per_class = min(
+            sum(
+                min(windows_per_source, np.count_nonzero(self.groups == group_id))
+                for group_id in np.unique(self.groups[self.targets == class_id])
+            )
+            for class_id in self.class_ids
+        )
+
+    def __iter__(self):
+        random_state = np.random.RandomState(self.seed + self.epoch)
+        selected_indices = []
+        for class_id in self.class_ids:
+            group_candidates = []
+            class_groups = np.unique(self.groups[self.targets == class_id])
+            random_state.shuffle(class_groups)
+            for group_id in class_groups:
+                group_indices = np.flatnonzero(
+                    (self.targets == class_id) & (self.groups == group_id)
+                )
+                count = min(self.windows_per_source, len(group_indices))
+                group_candidates.append(
+                    random_state.choice(group_indices, size=count, replace=False).tolist()
+                )
+            class_candidates = []
+            while len(class_candidates) < self.samples_per_class:
+                added_sample = False
+                for candidates in group_candidates:
+                    if candidates:
+                        class_candidates.append(candidates.pop())
+                        added_sample = True
+                        if len(class_candidates) == self.samples_per_class:
+                            break
+                if not added_sample:
+                    break
+            selected_indices.extend(class_candidates)
+        random_state.shuffle(selected_indices)
+        self.epoch += 1
+        return iter(selected_indices)
+
+    def __len__(self) -> int:
+        return len(self.class_ids) * self.samples_per_class
 
 
 class VesselDataset(Dataset):
@@ -49,6 +111,26 @@ def create_argument_parser(model_name: str) -> argparse.ArgumentParser:
     parser.add_argument("--val-split", type=float, default=float(os.getenv("VAL_SPLIT", "0.2")))
     parser.add_argument("--seed", type=int, default=int(os.getenv("SEED", "42")))
     parser.add_argument("--num-workers", type=int, default=int(os.getenv("NUM_WORKERS", "0")))
+    parser.add_argument(
+        "--windows-per-source",
+        type=int,
+        default=int(os.getenv("WINDOWS_PER_SOURCE", "128")),
+    )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=int(os.getenv("EARLY_STOPPING_PATIENCE", "10")),
+    )
+    parser.add_argument(
+        "--disable-early-stopping",
+        action="store_true",
+        help="Train for all configured epochs without early stopping.",
+    )
+    parser.add_argument(
+        "--gradient-clip-norm",
+        type=float,
+        default=float(os.getenv("GRADIENT_CLIP_NORM", "5.0")),
+    )
     return parser
 
 
@@ -161,27 +243,11 @@ def _load_data(project_root: Path, config: TrainingConfig):
         features = np.zeros_like(features)
 
     dataset = VesselDataset(features, targets)
-    generator = torch.Generator().manual_seed(config.seed)
-
-    train_targets = targets[train_indices]
-    train_groups = groups[train_indices]
-    class_group_counts = {
-        class_id: len(np.unique(train_groups[train_targets == class_id]))
-        for class_id in np.unique(train_targets)
-    }
-    group_sample_counts = dict(zip(*np.unique(train_groups, return_counts=True)))
-    sample_weights = np.asarray(
-        [
-            1.0 / (class_group_counts[class_id] * group_sample_counts[group_id])
-            for class_id, group_id in zip(train_targets, train_groups)
-        ],
-        dtype=np.float64,
-    )
-    sampler = WeightedRandomSampler(
-        weights=torch.from_numpy(sample_weights),
-        num_samples=len(train_indices),
-        replacement=True,
-        generator=generator,
+    sampler = BalancedGroupSampler(
+        targets=targets[train_indices],
+        groups=groups[train_indices],
+        windows_per_source=config.windows_per_source,
+        seed=config.seed,
     )
 
     train_loader = DataLoader(
@@ -207,7 +273,7 @@ def _extract_logits(outputs: torch.Tensor) -> torch.Tensor:
     return outputs
 
 
-def _run_epoch(model, data_loader, device, criterion, optimizer=None):
+def _run_epoch(model, data_loader, device, criterion, optimizer=None, gradient_clip_norm=0.0):
     training = optimizer is not None
     model.train(training)
     total_loss = 0.0
@@ -222,11 +288,17 @@ def _run_epoch(model, data_loader, device, criterion, optimizer=None):
             if training:
                 optimizer.zero_grad(set_to_none=True)
 
-            logits = _extract_logits(model(features))
+            outputs = model(features)
+            logits = _extract_logits(outputs)
             loss = criterion(logits, targets)
+            regularization_loss = getattr(model, "regularization_loss", None)
+            if regularization_loss is not None:
+                loss = loss + regularization_loss(outputs)
 
             if training:
                 loss.backward()
+                if gradient_clip_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
                 optimizer.step()
 
             batch_size = features.size(0)
@@ -328,6 +400,7 @@ def _read_best_accuracy(
     train_sampling: str,
     feature_normalization: str,
     preprocessing_signature: str,
+    architecture_version: Optional[str] = None,
 ) -> float:
     if not path.exists():
         return float("-inf")
@@ -339,6 +412,11 @@ def _read_best_accuracy(
             or dataset.get("train_sampling") != train_sampling
             or dataset.get("feature_normalization") != feature_normalization
             or dataset.get("preprocessing_signature") != preprocessing_signature
+            or (
+                architecture_version is not None
+                and payload.get("training_config", {}).get("architecture_version")
+                != architecture_version
+            )
         ):
             return float("-inf")
         return float(payload["result_summary"]["best_val_accuracy"])
@@ -358,6 +436,10 @@ def train_experiment(
 ) -> dict:
     if config.epochs < 1:
         raise ValueError("epochs must be at least 1")
+    if config.early_stopping_patience is not None and config.early_stopping_patience < 1:
+        raise ValueError("early_stopping_patience must be at least 1")
+    if config.gradient_clip_norm < 0:
+        raise ValueError("gradient_clip_norm cannot be negative")
 
     set_seed(config.seed)
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -383,30 +465,54 @@ def train_experiment(
     if preprocess_config.get("num_source_files") != len(np.unique(groups)):
         raise ValueError("Preprocessing metadata source-file count does not match groups.npy")
     split_strategy = "file_group_stratified"
-    train_sampling = "class_and_source_file_balanced"
+    train_sampling = f"class_source_capped_without_replacement_{config.windows_per_source}"
     feature_normalization = "train_only_global_minmax"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = build_model(len(class_names), input_shape).to(device)
     optimizer = build_optimizer(model.parameters())
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=2,
+        min_lr=config.learning_rate * 0.01,
+    )
 
     history = {"train_loss": [], "val_loss": [], "train_accuracy": [], "val_accuracy": []}
     run_best_accuracy = float("-inf")
+    run_best_loss = float("inf")
     run_best_epoch = 0
+    epochs_without_improvement = 0
     run_best_path = model_dir / f".checkpoint_run_best_{model_name}.pt"
     latest_checkpoint_path = model_dir / f"checkpoint_latest_{model_name}.pt"
     best_checkpoint_path = model_dir / f"checkpoint_best_{model_name}.pt"
     latest_log_path = model_dir / f"log_latest_{model_name}.json"
     best_log_path = model_dir / f"log_best_{model_name}.json"
+    architecture_version = (extra_config or {}).get("architecture_version")
 
     print(f"Training {model_name} on {device}: {len(train_indices)} train / {len(val_indices)} validation samples")
     for epoch in range(1, config.epochs + 1):
-        train_loss, train_accuracy = _run_epoch(model, train_loader, device, criterion, optimizer)
+        train_loss, train_accuracy = _run_epoch(
+            model,
+            train_loader,
+            device,
+            criterion,
+            optimizer,
+            config.gradient_clip_norm,
+        )
         val_loss, val_accuracy = _run_epoch(model, val_loader, device, criterion)
+        scheduler.step(val_loss)
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["train_accuracy"].append(train_accuracy)
         history["val_accuracy"].append(val_accuracy)
+
+        if val_loss < run_best_loss:
+            run_best_loss = val_loss
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
 
         if val_accuracy > run_best_accuracy:
             run_best_accuracy = val_accuracy
@@ -421,6 +527,7 @@ def train_experiment(
                     "input_shape": input_shape,
                     "preprocessing_signature": preprocessing_signature,
                     "split_seed": config.seed,
+                    "architecture_version": architecture_version,
                 },
                 run_best_path,
             )
@@ -428,19 +535,29 @@ def train_experiment(
         print(
             f"Epoch {epoch:03d}/{config.epochs:03d} | "
             f"train loss {train_loss:.4f} acc {train_accuracy:.4f} | "
-            f"val loss {val_loss:.4f} acc {val_accuracy:.4f}"
+            f"val loss {val_loss:.4f} acc {val_accuracy:.4f} | "
+            f"lr {optimizer.param_groups[0]['lr']:.2e}"
         )
+        if (
+            config.early_stopping_patience is not None
+            and epochs_without_improvement >= config.early_stopping_patience
+        ):
+            print(f"Early stopping at epoch {epoch}; best validation loss was {run_best_loss:.4f}")
+            break
+
+    completed_epochs = len(history["train_loss"])
 
     torch.save(
         {
             "model_name": model_name,
-            "epoch": config.epochs,
+            "epoch": completed_epochs,
             "val_accuracy": history["val_accuracy"][-1],
             "model_state_dict": model.state_dict(),
             "class_names": class_names,
             "input_shape": input_shape,
             "preprocessing_signature": preprocessing_signature,
             "split_seed": config.seed,
+            "architecture_version": architecture_version,
         },
         latest_checkpoint_path,
     )
@@ -481,6 +598,7 @@ def train_experiment(
         },
         "history": history,
         "result_summary": {
+            "completed_epochs": completed_epochs,
             "best_epoch": run_best_epoch,
             "best_val_accuracy": run_best_accuracy,
             "latest_val_accuracy": history["val_accuracy"][-1],
@@ -500,6 +618,7 @@ def train_experiment(
         train_sampling,
         feature_normalization,
         preprocessing_signature,
+        architecture_version,
     )
     _write_json(latest_log_path, record)
     if run_best_accuracy > previous_best_accuracy:

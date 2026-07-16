@@ -6,59 +6,70 @@ import torch.nn.functional as F
 class PVSCNet(nn.Module):
     """Probabilistic variational classifier for single-channel spectrograms."""
 
-    def __init__(self, num_classes: int, input_shape: tuple[int, int], z_dim: int = 16):
+    def __init__(
+        self,
+        num_classes: int,
+        input_shape: tuple[int, int],
+        z_dim: int = 16,
+        latent_noise_scale: float = 0.1,
+    ):
         super().__init__()
-        input_height, input_width = input_shape
+        self.latent_noise_scale = float(latent_noise_scale)
 
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
+            nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, 32),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, 64),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, 128),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, 256),
+            nn.SiLU(inplace=True),
         )
-
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, 1, input_height, input_width)
-            feature_dim = self.encoder(dummy_input).numel()
-
-        self.hidden = nn.Linear(feature_dim, 512)
-        self.fc_mu = nn.Linear(512, z_dim)
-        self.fc_logvar = nn.Linear(512, z_dim)
+        self.hidden = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.SiLU(inplace=True),
+            nn.Dropout(0.4),
+        )
+        self.fc_mu = nn.Linear(256, z_dim)
+        self.fc_logvar = nn.Linear(256, z_dim)
         self.classifier = nn.Sequential(
-            nn.Linear(z_dim, 256),
-            nn.BatchNorm1d(256),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(256, 128),
-            nn.BatchNorm1d(128),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
+            nn.LayerNorm(z_dim),
+            nn.Linear(z_dim, 128),
+            nn.SiLU(inplace=True),
+            nn.Dropout(0.4),
             nn.Linear(128, num_classes),
         )
+        nn.init.zeros_(self.fc_logvar.weight)
+        nn.init.constant_(self.fc_logvar.bias, -2.0)
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        if not self.training:
+        if not self.training or self.latent_noise_scale <= 0:
             return mu
-        std = torch.exp(0.5 * logvar)
-        return mu + torch.randn_like(std) * std
+        std = torch.exp(0.5 * logvar.clamp(min=-6.0, max=2.0))
+        return mu + self.latent_noise_scale * torch.randn_like(std) * std
 
     def forward(self, inputs: torch.Tensor):
-        features = self.encoder(inputs).flatten(1)
-        hidden = F.leaky_relu(self.hidden(features), negative_slope=0.2)
+        features = self.encoder(inputs)
+        pooled = torch.cat(
+            [
+                F.adaptive_avg_pool2d(features, 1).flatten(1),
+                F.adaptive_max_pool2d(features, 1).flatten(1),
+            ],
+            dim=1,
+        )
+        hidden = self.hidden(pooled)
         mu = self.fc_mu(hidden)
-        logvar = self.fc_logvar(hidden)
+        logvar = self.fc_logvar(hidden).clamp(min=-6.0, max=2.0)
         latent = self.reparameterize(mu, logvar)
         logits = self.classifier(latent)
         return logits, mu, logvar, latent
 
 
 def compute_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    return F.cross_entropy(logits, labels)
+    return F.cross_entropy(logits, labels, label_smoothing=0.05)
