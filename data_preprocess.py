@@ -6,6 +6,12 @@ from pathlib import Path
 import librosa
 import numpy as np
 
+from feature_extraction.features_aux import (
+    AUXILIARY_FEATURE_DIM,
+    AUXILIARY_FEATURE_NAMES,
+    extract_aux_features,
+)
+
 DATA_DIR = 'data'  # 原始数据目录
 OUTPUT_DIR = 'processed'  # 保存预处理数据的文件夹
 SAMPLE_RATE = 16000  # 采样率
@@ -86,7 +92,7 @@ def prepare_dataset(
     seed: int,
 ):
     # 遍历所有类别和音频文件，生成特征和标签
-    X, y, groups, window_starts, labels = [], [], [], [], []
+    X, auxiliary_features, y, groups, window_starts, labels = [], [], [], [], [], []
     random_generator = np.random.default_rng(seed)
     for label_idx, vessel_type in enumerate(sorted(os.listdir(data_dir))):
         vessel_dir = data_dir / vessel_type
@@ -115,23 +121,26 @@ def prepare_dataset(
             for clip, start in zip(clips, starts):
                 mel = extract_mel(clip, SAMPLE_RATE)
                 X.append(mel)
+                auxiliary_features.append(extract_aux_features(clip, sr=SAMPLE_RATE))
                 y.append(label_idx)
                 groups.append(f"{vessel_type}/{fname}")
                 window_starts.append(start)
         
         print(f"  - 文件数: {file_count}, 生成片段数: {clip_count}")
     
-    X = np.array(X)  # (样本数, 频带数, 帧数)
+    X = np.asarray(X, dtype=np.float32)  # (样本数, 频带数, 帧数)
+    auxiliary_features = np.asarray(auxiliary_features, dtype=np.float32)
     y = np.array(y)
     groups = np.array(groups)
     window_starts = np.asarray(window_starts, dtype=np.int64)
     
     print(f"\n总样本数: {len(X)}")
     print(f"特征形状: {X.shape}")
+    print(f"辅助特征形状: {auxiliary_features.shape}")
     print(f"类别数: {len(labels)}")
     print(f"类别名称: {labels}")
     
-    return X, y, groups, window_starts, labels
+    return X, auxiliary_features, y, groups, window_starts, labels
 
 
 def save_dataset(
@@ -167,7 +176,7 @@ def save_dataset(
     print(f"随机种子: {seed}")
     print("=" * 50 + "\n")
     
-    X, y, groups, window_starts, labels = prepare_dataset(
+    X, auxiliary_features, y, groups, window_starts, labels = prepare_dataset(
         data_dir,
         clip_samples,
         hop_samples,
@@ -176,6 +185,7 @@ def save_dataset(
     )
     
     np.save(output_dir / 'X.npy', X)
+    np.save(output_dir / 'auxiliary_features.npy', auxiliary_features)
     np.save(output_dir / 'y.npy', y)
     np.save(output_dir / 'groups.npy', groups)
     np.save(output_dir / 'window_starts.npy', window_starts)
@@ -189,6 +199,14 @@ def save_dataset(
         "jitter_ratio": jitter_ratio,
         "jitter_samples": jitter_samples,
         "seed": seed,
+        "feature_extraction": {
+            "primary": "log_mel_spectrogram",
+            "n_mels": N_MELS,
+            "auxiliary": "spectrogram_texture_shape_gradient_envelope_audio_stats",
+            "auxiliary_dim": AUXILIARY_FEATURE_DIM,
+            "auxiliary_feature_names": AUXILIARY_FEATURE_NAMES,
+            "selection": "train_only_standard_scaler_pca12_lda3_output_scaler",
+        },
         "num_source_files": int(len(np.unique(groups))),
         "num_samples": int(len(X)),
     }

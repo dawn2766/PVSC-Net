@@ -42,11 +42,12 @@ def main() -> None:
         project_root=PROJECT_ROOT,
         model_dir=MODEL_DIR,
         config=config,
-        build_model=lambda num_classes, input_shape: PVSCNet(
+        build_model=lambda num_classes, input_shape, auxiliary_dim: PVSCNet(
             num_classes,
             input_shape,
             z_dim=args.z_dim,
             latent_noise_scale=args.latent_noise_scale,
+            auxiliary_dim=auxiliary_dim,
         ),
         build_optimizer=lambda parameters: optim.AdamW(
             parameters,

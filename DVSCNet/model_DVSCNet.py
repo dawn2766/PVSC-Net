@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from feature_fusion import AuxiliaryFeatureEncoder
+
 
 def _group_count(channels: int) -> int:
     for groups in (8, 4, 2):
@@ -210,6 +212,7 @@ class DVSCNet(nn.Module):
         time_mask: int = 8,
         augment_probability: float = 0.3,
         normalize_input: bool = True,
+        auxiliary_dim: int = 3,
     ):
         super().__init__()
         self.latent_noise_scale = float(latent_noise_scale)
@@ -240,8 +243,15 @@ class DVSCNet(nn.Module):
             nn.SiLU(inplace=True),
         )
         self.context_encoder = SpectralContextEncoder(output_dim=160)
+        self.auxiliary_encoder = AuxiliaryFeatureEncoder(auxiliary_dim, output_dim=32)
         self.fusion = nn.Sequential(
-            nn.Linear(32 * 4 * 5 * 2 + 128 * 3 + 160, 256),
+            nn.Linear(
+                32 * 4 * 5 * 2
+                + 128 * 3
+                + 160
+                + self.auxiliary_encoder.output_dim,
+                256,
+            ),
             nn.LayerNorm(256),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout),
@@ -297,7 +307,11 @@ class DVSCNet(nn.Module):
         kl_divergence = -0.5 * (1.0 + logvar - mu.square() - logvar.exp())
         return self.kl_weight * kl_divergence.mean()
 
-    def forward(self, inputs: torch.Tensor):
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        auxiliary_features: torch.Tensor = None,
+    ):
         augmented_inputs = self._spec_augment(inputs)
         normalized_inputs = self._normalize(augmented_inputs)
         feature_map = self.encoder(self.domain_mixer(self.stem(augmented_inputs)))
@@ -318,8 +332,22 @@ class DVSCNet(nn.Module):
             dim=1,
         )
         context_features = self.context_encoder(normalized_inputs)
+        auxiliary_embedding = self.auxiliary_encoder(
+            auxiliary_features,
+            batch_size=inputs.size(0),
+            device=inputs.device,
+            dtype=inputs.dtype,
+        )
         fused_features = self.fusion(
-            torch.cat([layout_features, global_statistics, context_features], dim=1)
+            torch.cat(
+                [
+                    layout_features,
+                    global_statistics,
+                    context_features,
+                    auxiliary_embedding,
+                ],
+                dim=1,
+            )
         )
         mu = self.fc_mu(fused_features)
         logvar = self.fc_logvar(fused_features).clamp(min=-6.0, max=2.0)

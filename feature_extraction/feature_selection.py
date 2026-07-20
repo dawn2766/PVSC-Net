@@ -6,13 +6,12 @@ import os
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from torch_geometric.data import Data
 from sklearn.neighbors import kneighbors_graph
 
 
 SEED = 42
 LDA_DIM = 3
-PCA_DIM = 3
+PCA_DIM = 12
 K_NEIGHBORS = 5
 
 def feature_selection(samples, train_idx, test_idx, save_dir="models"):
@@ -34,6 +33,7 @@ def feature_selection(samples, train_idx, test_idx, save_dir="models"):
     aux_test_selected = selector.transform(aux_test)
 
     #  保存处理器
+    os.makedirs(save_dir, exist_ok=True)
     joblib.dump(node_scaler, os.path.join(save_dir, "node_scaler.pkl"))
     joblib.dump(selector, os.path.join(save_dir, "selector.pkl"))
 
@@ -62,9 +62,19 @@ class PCALDASelector:
         self.scaler = StandardScaler()
         self.pca = None
         self.lda = None
+        self.output_scaler = StandardScaler()
         self.output_dim = None
 
     def fit(self, X, y):#X: 特征 (n_samples, n_features),y: 标签，训练模型
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y)
+        if X.ndim != 2:
+            raise ValueError(f"Expected 2D auxiliary features, got {X.shape}")
+        if len(X) != len(y):
+            raise ValueError("Auxiliary features and labels must have the same length")
+        if not np.isfinite(X).all():
+            raise ValueError("Auxiliary features contain NaN or infinite values")
+
         X_std = self.scaler.fit_transform(X)#标准化数据
 
         pca_dim = min(self.pca_dim, X_std.shape[1], X_std.shape[0])
@@ -77,17 +87,28 @@ class PCALDASelector:
         if lda_dim <= 0:
             self.lda = None
             self.output_dim = X_pca.shape[1]
+            X_selected = X_pca
         else:
             self.lda = LinearDiscriminantAnalysis(n_components=lda_dim)#创建LDA模型
             self.lda.fit(X_pca, y)#训练LDA模型
             self.output_dim = lda_dim
+            X_selected = self.lda.transform(X_pca)
+        self.output_scaler.fit(X_selected)
+        return self
 
     def transform(self, X):
+        X = np.asarray(X, dtype=np.float32)
+        if X.ndim != 2:
+            raise ValueError(f"Expected 2D auxiliary features, got {X.shape}")
+        if not np.isfinite(X).all():
+            raise ValueError("Auxiliary features contain NaN or infinite values")
         X_std = self.scaler.transform(X)
         X_pca = self.pca.transform(X_std)
         if self.lda is not None:
-            return self.lda.transform(X_pca).astype(np.float32)
-        return X_pca.astype(np.float32)
+            X_selected = self.lda.transform(X_pca)
+        else:
+            X_selected = X_pca
+        return self.output_scaler.transform(X_selected).astype(np.float32)
 
     def fit_transform(self, X, y):
         self.fit(X, y)
@@ -107,6 +128,8 @@ class NodeFeatureScaler:
         return self.scaler.transform(node_features).astype(np.float32)
 
 def build_graph(node_features, aux_features, label):
+    from torch_geometric.data import Data
+
     x = torch.tensor(node_features, dtype=torch.float)#把数组变成 PyTorch张量
 
     # KNN图

@@ -1,0 +1,247 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Train DVSCNet v4",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"DVSCNet/train_DVSCNet.py",
+				"--epochs",
+				"35",
+				"--batch-size",
+				"64",
+				"--learning-rate",
+				"3e-4",
+				"--seed",
+				"2026",
+				"--weight-decay",
+				"1e-3",
+				"--dropout",
+				"0.4",
+				"--kl-weight",
+				"5e-4",
+				"--latent-noise-scale",
+				"0.05",
+				"--disable-early-stopping"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Screen DVSCNet v4.2",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"DVSCNet/train_DVSCNet.py",
+				"--epochs",
+				"18",
+				"--batch-size",
+				"64",
+				"--learning-rate",
+				"3e-4",
+				"--seed",
+				"2026",
+				"--weight-decay",
+				"1e-3",
+				"--dropout",
+				"0.4",
+				"--kl-weight",
+				"5e-4",
+				"--latent-noise-scale",
+				"0.05",
+				"--disable-early-stopping"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate DVSCNet v7 gate",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"-c",
+				"import sys, torch; sys.path.insert(0, 'DVSCNet'); from model_DVSCNet import DVSCNet; torch.manual_seed(17); model=DVSCNet(4); deep=torch.randn(2,128,8,10,requires_grad=True); detail=torch.randn(2,72,8,20); fused=model.detail_fusion(deep,detail); assert torch.equal(fused,deep); fused.square().mean().backward(); assert model.detail_fusion.gate.grad is not None; assert torch.isfinite(model.detail_fusion.gate.grad).all(); print('zero-gate equivalence OK'); print('gate_grad',float(model.detail_fusion.gate.grad.abs().mean())); print('params',sum(p.numel() for p in model.parameters()))"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate DVSCNet v7",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"DVSCNet/validate_v7.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Evaluate DVSCNet v7 checkpoint",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"DVSCNet/validate_checkpoint_v7.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate enhanced feature pipeline",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"validate_feature_pipeline.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Rebuild enhanced acoustic features",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"data_preprocess.py",
+				"--overlap-ratio",
+				"0.75",
+				"--jitter-ratio",
+				"0.2",
+				"--seed",
+				"2026"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Smoke train enhanced DVSCNet",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"DVSCNet/train_DVSCNet.py",
+				"--epochs",
+				"1",
+				"--batch-size",
+				"64",
+				"--learning-rate",
+				"3e-4",
+				"--seed",
+				"2026",
+				"--weight-decay",
+				"1e-3",
+				"--dropout",
+				"0.4",
+				"--kl-weight",
+				"5e-4",
+				"--latent-noise-scale",
+				"0.05",
+				"--disable-early-stopping"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Train enhanced PVSCNet",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"PVSCNet/train_PVSCNet.py",
+				"--epochs",
+				"35",
+				"--batch-size",
+				"64",
+				"--learning-rate",
+				"3e-4",
+				"--seed",
+				"2026",
+				"--weight-decay",
+				"1e-4",
+				"--latent-noise-scale",
+				"0.1",
+				"--disable-early-stopping"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Train enhanced VesselCNN",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"VesselCNN/train_VesselCNN.py",
+				"--epochs",
+				"35",
+				"--batch-size",
+				"64",
+				"--learning-rate",
+				"3e-4",
+				"--seed",
+				"2026",
+				"--weight-decay",
+				"1e-4",
+				"--disable-early-stopping"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Train enhanced DVSCNet",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"DVSCNet/train_DVSCNet.py",
+				"--epochs",
+				"35",
+				"--batch-size",
+				"64",
+				"--learning-rate",
+				"3e-4",
+				"--seed",
+				"2026",
+				"--weight-decay",
+				"1e-3",
+				"--dropout",
+				"0.4",
+				"--kl-weight",
+				"5e-4",
+				"--latent-noise-scale",
+				"0.05",
+				"--disable-early-stopping"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Plot enhanced model comparison",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"plot_compare_models.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Evaluate enhanced model checkpoints",
+			"type": "shell",
+			"command": "C:/Users/14704/miniconda3/envs/d2l/python.exe",
+			"args": [
+				"evaluate_enhanced_models.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}

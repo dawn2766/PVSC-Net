@@ -1,7 +1,7 @@
 import numpy as np
 import librosa
 
-from scipy.signal import butter, filtfilt, hilbert
+from scipy.signal import butter, hilbert, sosfiltfilt
 from .features_glcm import extract_glcm_features
 from .features_glcm import extract_hu_moments
 
@@ -9,13 +9,39 @@ SPEC_IMG_H = 128
 SPEC_IMG_W = 128
 GLCM_LEVELS = 16
 PCA_DIM = 3
-SAMPLE_RATE = 48000
+SAMPLE_RATE = 16000
 N_FFT = 1024
 HOP_LENGTH = 512
 LOWCUT = 200
 HIGHCUT = 2000
 
-def extract_aux_features(y):
+AUXILIARY_FEATURE_NAMES = [
+    *[f"glcm_{stat}_{name}" for stat in ("mean", "std") for name in (
+        "contrast",
+        "dissimilarity",
+        "homogeneity",
+        "asm",
+        "energy",
+        "correlation",
+        "entropy",
+    )],
+    *[f"hu_{index}" for index in range(1, 8)],
+    "gradient_mean",
+    "gradient_std",
+    "gradient_max",
+    "gradient_entropy",
+    "envelope_peak_frequency",
+    "envelope_peak_magnitude",
+    "envelope_spectral_centroid",
+    "envelope_spectral_entropy",
+    "rms",
+    "zero_crossing_rate",
+    "spectral_centroid",
+    "spectral_bandwidth",
+]
+AUXILIARY_FEATURE_DIM = len(AUXILIARY_FEATURE_NAMES)
+
+def extract_aux_features(y, sr=SAMPLE_RATE):
     """
     原始辅助特征 = 频谱图图像特征 + 包络特征 + 基本统计
     """
@@ -24,15 +50,17 @@ def extract_aux_features(y):
     glcm_feat = extract_glcm_features(img_quant)      # 14维，灰度共生矩阵
     hu_feat = extract_hu_moments(img_float)           # 7维,img_float 先用于求图像矩,拼成hu,做对数变换返回 hu_feat
     grad_feat = extract_gradient_features(img_float)  # 4维,梯度特征，均值,标准差,最大值,熵
-    env_feat = extract_envelope_features(y)           # 4维，包络特征
-    basic_feat = extract_basic_audio_stats(y)         # 4维，基础特征
+    env_feat = extract_envelope_features(y, sr=sr)    # 4维，包络特征
+    basic_feat = extract_basic_audio_stats(y, sr=sr)  # 4维，基础特征
 
     aux = np.concatenate(
         [glcm_feat, hu_feat, grad_feat, env_feat, basic_feat],
         axis=0
     ).astype(np.float32)
 
-    return aux  # 共 33 维
+    if aux.shape != (AUXILIARY_FEATURE_DIM,) or not np.isfinite(aux).all():
+        raise ValueError(f"Invalid auxiliary feature vector with shape {aux.shape}")
+    return aux
 
 
 def build_spectrogram_image(y):
@@ -69,12 +97,12 @@ def extract_gradient_features(img_float):
     return feats
 
 
-def extract_envelope_features(y):
-    y_band = bandpass_filter(y)
+def extract_envelope_features(y, sr=SAMPLE_RATE):
+    y_band = bandpass_filter(y, sr=sr)
     env = np.abs(hilbert(y_band)).astype(np.float32)
 
     spectrum = np.abs(np.fft.rfft(env))
-    freqs = np.fft.rfftfreq(len(env), d=1.0 / SAMPLE_RATE)
+    freqs = np.fft.rfftfreq(len(env), d=1.0 / sr)
 
     idx = np.where((freqs >= 0) & (freqs <= 200))[0]
     spectrum = spectrum[idx]
@@ -91,11 +119,11 @@ def extract_envelope_features(y):
     return np.array([peak_freq, peak_val, centroid, entropy], dtype=np.float32)
 
 
-def extract_basic_audio_stats(y):
+def extract_basic_audio_stats(y, sr=SAMPLE_RATE):
     rms = float(np.sqrt(np.mean(y ** 2) + 1e-12))
     zcr = float(np.mean(librosa.feature.zero_crossing_rate(y, frame_length=1024, hop_length=512)))
-    spec_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=SAMPLE_RATE)))
-    spec_bw = float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=SAMPLE_RATE)))
+    spec_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+    spec_bw = float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)))
 
     return np.array([rms, zcr, spec_centroid, spec_bw], dtype=np.float32)
 
@@ -116,9 +144,11 @@ def resize_2d_array(arr, out_h=SPEC_IMG_H, out_w=SPEC_IMG_W):
 def bandpass_filter(y, sr=SAMPLE_RATE, lowcut=LOWCUT, highcut=HIGHCUT, order=4):
     nyq = 0.5 * sr
     low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype="band")
-    y_filtered = filtfilt(b, a, y)
+    high = min(highcut / nyq, 0.99)
+    if not 0 < low < high < 1:
+        raise ValueError(f"Invalid bandpass range {lowcut}-{highcut} Hz for sample rate {sr}")
+    sos = butter(order, [low, high], btype="band", output="sos")
+    y_filtered = sosfiltfilt(sos, y)
     return y_filtered.astype(np.float32)
 
 

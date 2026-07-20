@@ -1,0 +1,51 @@
+{
+  "device": "cuda",
+  "validation_source_files": 12,
+  "models": {
+    "PVSCNet": {
+      "best_epoch": 10,
+      "accuracy": 0.8706411698537683,
+      "macro_f1": 0.8785607894117011,
+      "recall_by_class": {
+        "Cargo": 0.8765822784810127,
+        "Passengership": 0.6994219653179191,
+        "Tanker": 0.9043824701195219,
+        "Tug": 1.0
+      },
+      "parameter_count": 540554,
+      "validation_samples": 889,
+      "preprocessing_signature": "80093138f16f9a9f",
+      "auxiliary_dim": 3
+    },
+    "VesselCNN": {
+      "best_epoch": 24,
+      "accuracy": 0.8233970753655793,
+      "macro_f1": 0.828414643373652,
+      "recall_by_class": {
+        "Cargo": 0.7310126582278481,
+        "Passengership": 0.7109826589595376,
+        "Tanker": 0.9123505976095617,
+        "Tug": 1.0
+      },
+      "parameter_count": 623178,
+      "validation_samples": 889,
+      "preprocessing_signature": "80093138f16f9a9f",
+      "auxiliary_dim": 3
+    },
+    "DVSCNet": {
+      "best_epoch": 30,
+      "accuracy": 0.8605174353205849,
+      "macro_f1": 0.8650345156507525,
+      "recall_by_class": {
+        "Cargo": 0.8607594936708861,
+        "Passengership": 0.7109826589595376,
+        "Tanker": 0.8804780876494024,
+        "Tug": 1.0
+      },
+      "parameter_count": 707083,
+      "validation_samples": 889,
+      "preprocessing_signature": "80093138f16f9a9f",
+      "auxiliary_dim": 3
+    }
+  }
+}

@@ -16,23 +16,16 @@ def compute_glcm(img, dx, dy, levels=GLCM_LEVELS):
     手写 GLCM，避免额外依赖 skimage
     """
     h, w = img.shape
-    glcm = np.zeros((levels, levels), dtype=np.float64)
-
-    for y in range(h):
-        ny = y + dy
-        if ny < 0 or ny >= h:
-            continue
-        for x in range(w):
-            nx = x + dx
-            if nx < 0 or nx >= w:
-                continue
-            i = img[y, x]
-            j = img[ny, nx]
-            glcm[i, j] += 1.0
-
-    if glcm.sum() > 0:
-        glcm /= glcm.sum()
-    return glcm
+    source_y = slice(max(0, -dy), min(h, h - dy))
+    source_x = slice(max(0, -dx), min(w, w - dx))
+    target_y = slice(max(0, dy), min(h, h + dy))
+    target_x = slice(max(0, dx), min(w, w + dx))
+    source = img[source_y, source_x].astype(np.int64, copy=False).ravel()
+    target = img[target_y, target_x].astype(np.int64, copy=False).ravel()
+    if source.size == 0:
+        return np.zeros((levels, levels), dtype=np.float64)
+    counts = np.bincount(source * levels + target, minlength=levels * levels)
+    return counts.reshape(levels, levels).astype(np.float64) / source.size
 
 
 def glcm_features_from_matrix(P):

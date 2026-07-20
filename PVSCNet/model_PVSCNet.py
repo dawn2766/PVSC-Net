@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from feature_fusion import AuxiliaryFeatureEncoder
+
 
 class PVSCNet(nn.Module):
     """Probabilistic variational classifier for single-channel spectrograms."""
@@ -12,6 +14,7 @@ class PVSCNet(nn.Module):
         input_shape: tuple[int, int],
         z_dim: int = 16,
         latent_noise_scale: float = 0.1,
+        auxiliary_dim: int = 3,
     ):
         super().__init__()
         self.latent_noise_scale = float(latent_noise_scale)
@@ -30,8 +33,9 @@ class PVSCNet(nn.Module):
             nn.GroupNorm(8, 256),
             nn.SiLU(inplace=True),
         )
+        self.auxiliary_encoder = AuxiliaryFeatureEncoder(auxiliary_dim, output_dim=32)
         self.hidden = nn.Sequential(
-            nn.Linear(512, 256),
+            nn.Linear(512 + self.auxiliary_encoder.output_dim, 256),
             nn.LayerNorm(256),
             nn.SiLU(inplace=True),
             nn.Dropout(0.4),
@@ -54,7 +58,11 @@ class PVSCNet(nn.Module):
         std = torch.exp(0.5 * logvar.clamp(min=-6.0, max=2.0))
         return mu + self.latent_noise_scale * torch.randn_like(std) * std
 
-    def forward(self, inputs: torch.Tensor):
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        auxiliary_features: torch.Tensor = None,
+    ):
         features = self.encoder(inputs)
         pooled = torch.cat(
             [
@@ -63,7 +71,13 @@ class PVSCNet(nn.Module):
             ],
             dim=1,
         )
-        hidden = self.hidden(pooled)
+        auxiliary_embedding = self.auxiliary_encoder(
+            auxiliary_features,
+            batch_size=inputs.size(0),
+            device=inputs.device,
+            dtype=inputs.dtype,
+        )
+        hidden = self.hidden(torch.cat([pooled, auxiliary_embedding], dim=1))
         mu = self.fc_mu(hidden)
         logvar = self.fc_logvar(hidden).clamp(min=-6.0, max=2.0)
         latent = self.reparameterize(mu, logvar)

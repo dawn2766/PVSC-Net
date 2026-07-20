@@ -45,13 +45,14 @@ def main() -> None:
         project_root=PROJECT_ROOT,
         model_dir=MODEL_DIR,
         config=config,
-        build_model=lambda num_classes, _input_shape: DVSCNet(
+        build_model=lambda num_classes, _input_shape, auxiliary_dim: DVSCNet(
             num_classes=num_classes,
             z_dim=args.z_dim,
             dropout=args.dropout,
             latent_noise_scale=args.latent_noise_scale,
             kl_weight=args.kl_weight,
             use_spec_augment=not args.disable_spec_augment,
+            auxiliary_dim=auxiliary_dim,
         ),
         build_optimizer=lambda parameters: optim.AdamW(
             parameters,
@@ -60,7 +61,7 @@ def main() -> None:
         ),
         criterion=compute_loss,
         extra_config={
-            "architecture_version": "single_stream_axial_context_v3",
+            "architecture_version": "single_stream_axial_context_aux_pca_lda_v4",
             "z_dim": args.z_dim,
             "dropout": args.dropout,
             "kl_weight": args.kl_weight,

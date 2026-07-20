@@ -41,14 +41,17 @@ Semi-Supervised-VAE-Acoustic-Classification/
    - 使用`librosa`读取每个音频文件，采用**移动窗口法**按5秒（可调）切分为多个小片段。
   - **窗口重叠率**：75%，步长为1.25秒；内部窗口在步长的20%范围内做带种子的随机抖动（默认±0.25秒）。
   - 首尾窗口固定覆盖录音边界，中间窗口起点随`--seed`变化；同一随机种子可以完全复现。
-   - 对每个片段提取梅尔频谱（Mel-spectrogram, n_mels=64），并转为dB刻度。
-   - 所有片段的梅尔频谱组成特征集，类别名转为数字标签。
+  - 对每个片段提取梅尔频谱（Mel-spectrogram, n_mels=64），并转为dB刻度，形成`64×157`二维主特征。
+  - 同时提取33维辅助描述符：14维GLCM纹理、7维Hu矩、4维频谱图梯度、4维包络谱和4维基础声学统计。
+  - 数据预处理只保存原始辅助描述符；完成文件级训练/验证划分后，使用训练采样拟合`StandardScaler → PCA(12) → LDA(3) → StandardScaler`，验证文件不参与特征选择器拟合。
+  - 三个模型分别编码二维log-Mel和3维选择特征，并在各自唯一分类头之前进行特征级融合。
 
 3. **特征保存**  
   - `X.npy`与`y.npy`：梅尔频谱和类别标签。
+  - `auxiliary_features.npy`：与每个梅尔窗口逐条对齐的33维原始辅助描述符。
   - `groups.npy`：每个窗口对应的原始 WAV，用于文件级互斥划分。
   - `window_starts.npy`：窗口在原始 WAV 中的起始采样点，用于审计重复和越界。
-  - `preprocess_config.json`：重叠率、抖动、随机种子和数据指纹的来源配置。
+  - `preprocess_config.json`：重叠率、抖动、随机种子、辅助特征名称和数据指纹的来源配置。
 
 运行如下命令完成数据预处理：
 
@@ -306,6 +309,8 @@ DVSCNet 还支持 `--z-dim`、`--dropout`、`--kl-weight`、`--weight-decay`、`
 - `log_best_模型名.json`：历史最佳训练记录
 - `curve_training_模型名.png`：本次训练损失和准确率曲线
 - `matrix_confusion_模型名.png`：本次最佳 epoch 权重的混淆矩阵
+- `selector_latest_模型名.joblib`：最近一次训练使用的辅助特征标准化、PCA和LDA参数
+- `selector_best_模型名.joblib`：与历史最佳checkpoint配套的辅助特征选择器
 
 三个模型训练完成后，在项目根目录运行：
 
@@ -321,15 +326,15 @@ python plot_compare_models.py
 
 ### 文件级无泄漏对比
 
-最终对比使用相同的75%重叠预处理、文件级分层随机划分、类别与源文件均衡采样、仅训练集拟合的 MinMax 归一化，以及种子2026。训练集和测试集包含51/12个互斥原始 WAV，对应3,527/889个窗口，源文件交集为0。数据协议指纹为`5619a4b7888494de`。
+最终对比使用相同的75%重叠预处理、文件级分层随机划分、类别与源文件均衡采样、仅训练集拟合的 MinMax 归一化和辅助特征`StandardScaler → PCA(12) → LDA(3) → StandardScaler`，随机种子为2026。训练集和测试集包含51/12个互斥原始 WAV，对应3,527/889个窗口，源文件交集为0。数据协议指纹为`80093138f16f9a9f`。
 
 | 模型 | 参数量 | 最佳轮次 | 验证准确率 | 宏平均 F1 |
 | --- | ---: | ---: | ---: | ---: |
-| PVSCNet | 531,108 | 14 | **78.40%** | **80.00%** |
-| VesselCNN | 617,828 | 22 | 77.62% | 78.68% |
-| DVSCNet | 697,637 | 27 | **84.59%** | **84.34%** |
+| PVSCNet | 540,554 | 10 | **87.06%** | **87.86%** |
+| VesselCNN | 623,178 | 24 | 82.34% | 82.84% |
+| DVSCNet | 707,083 | 30 | 86.05% | 86.50% |
 
-这组结果来自同一文件级划分和无放回源文件均衡采样，不能与旧版窗口随机划分或有放回重复采样的曲线直接比较。重构后的单模型 DVSCNet 相比旧架构的77.95%提高6.64个百分点，相比当前 PVSCNet 提高6.19个百分点。PVSCNet 与 DVSCNet 在评估模式下都使用潜变量均值，保证同一 checkpoint 的结果可重复。当前 Tug 类仅有3个源录音，本次划分为2个训练、1个验证，单次验证指标具有较高方差；后续应增加真实录音并采用重复 GroupKFold 评估置信区间。完整迭代记录见 [docs/DVSCNet_Redesign_Experiment.md](docs/DVSCNet_Redesign_Experiment.md)。
+这组结果来自同一文件级划分、无放回源文件均衡采样和训练集专属辅助特征选择，不能与旧版纯log-Mel、窗口随机划分或有放回重复采样的结果直接比较。增强特征显著提高了PVSCNet的最佳验证表现；本次单次划分中PVSCNet领先DVSCNet约1.01个百分点，因此当前不能再表述为DVSCNet最优。PVSCNet与DVSCNet在评估模式下都使用潜变量均值，保证同一checkpoint的结果可重复。当前Tug类仅有3个源录音，本次划分为2个训练、1个验证，单次验证指标仍具有较高方差；后续应增加真实录音并采用重复GroupKFold评估置信区间。独立复评结果保存在`evaluation_summary_enhanced_features.json`。
 
 ### 模型对比曲线
 
@@ -353,7 +358,7 @@ python plot_compare_models.py
 
 ![DVSCNet混淆矩阵](DVSCNet/matrix_confusion_DVSCNet.png)
 
-- **分析**：最终文件级验证中，DVSCNet 的 Cargo、Passengership、Tanker 和 Tug 召回率分别为90.51%、67.63%、82.47%和95.30%。主要剩余混淆发生在 Passengership 与 Tanker 之间。
+- **分析**：增强特征协议下，PVSCNet的Cargo、Passengership、Tanker和Tug召回率分别为87.66%、69.94%、90.44%和100%；DVSCNet分别为86.08%、71.10%、88.05%和100%。三个模型的主要剩余难点仍是Passengership。
 
 ---
 
@@ -365,6 +370,8 @@ numpy>=1.21.0
 torch>=1.10.0
 matplotlib>=3.4.0
 scikit-learn>=1.0.0
+scipy>=1.7.0
+joblib>=1.1.0
 ```
 
 安装依赖：

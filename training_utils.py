@@ -13,10 +13,13 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import joblib
 import numpy as np
 import torch
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from torch.utils.data import DataLoader, Dataset, Sampler, Subset
+
+from feature_extraction.feature_selection import PCALDASelector
 
 
 @dataclass
@@ -92,15 +95,29 @@ class BalancedGroupSampler(Sampler[int]):
 
 
 class VesselDataset(Dataset):
-    def __init__(self, features: np.ndarray, targets: np.ndarray):
+    def __init__(
+        self,
+        features: np.ndarray,
+        auxiliary_features: np.ndarray,
+        targets: np.ndarray,
+    ):
         self.features = torch.from_numpy(np.ascontiguousarray(features, dtype=np.float32))
+        self.auxiliary_features = torch.from_numpy(
+            np.ascontiguousarray(auxiliary_features, dtype=np.float32)
+        )
         self.targets = torch.from_numpy(np.asarray(targets, dtype=np.int64))
+        if len(self.features) != len(self.auxiliary_features) or len(self.features) != len(self.targets):
+            raise ValueError("Primary features, auxiliary features, and targets must align")
 
     def __len__(self) -> int:
         return len(self.features)
 
     def __getitem__(self, index: int):
-        return self.features[index].unsqueeze(0), self.targets[index]
+        return (
+            self.features[index].unsqueeze(0),
+            self.auxiliary_features[index],
+            self.targets[index],
+        )
 
 
 def create_argument_parser(model_name: str) -> argparse.ArgumentParser:
@@ -219,6 +236,12 @@ def _stratified_group_split(
 def _load_data(project_root: Path, config: TrainingConfig):
     processed_dir = project_root / "processed"
     features = np.load(processed_dir / "X.npy")
+    auxiliary_path = processed_dir / "auxiliary_features.npy"
+    if not auxiliary_path.exists():
+        raise FileNotFoundError(
+            "processed/auxiliary_features.npy is required; rerun data_preprocess.py"
+        )
+    raw_auxiliary_features = np.load(auxiliary_path)
     targets = np.load(processed_dir / "y.npy")
     groups_path = processed_dir / "groups.npy"
     if not groups_path.exists():
@@ -232,8 +255,16 @@ def _load_data(project_root: Path, config: TrainingConfig):
         features = features[..., 0]
     if features.ndim != 3:
         raise ValueError(f"Expected features with shape (N, H, W), got {features.shape}")
+    if raw_auxiliary_features.ndim != 2 or len(raw_auxiliary_features) != len(features):
+        raise ValueError(
+            "Expected auxiliary features with shape (N, D) aligned with primary features, "
+            f"got {raw_auxiliary_features.shape}"
+        )
+    if not np.isfinite(raw_auxiliary_features).all():
+        raise ValueError("Raw auxiliary features contain NaN or infinite values")
 
     features = features.astype(np.float32, copy=False)
+    raw_auxiliary_features = raw_auxiliary_features.astype(np.float32, copy=False)
     train_indices, val_indices = _stratified_group_split(targets, groups, config.val_split, config.seed)
     value_min = float(features[train_indices].min())
     value_range = float(features[train_indices].max() - value_min)
@@ -242,13 +273,22 @@ def _load_data(project_root: Path, config: TrainingConfig):
     else:
         features = np.zeros_like(features)
 
-    dataset = VesselDataset(features, targets)
     sampler = BalancedGroupSampler(
         targets=targets[train_indices],
         groups=groups[train_indices],
         windows_per_source=config.windows_per_source,
         seed=config.seed,
     )
+    selector_relative_indices = np.fromiter(iter(sampler), dtype=np.int64)
+    sampler.epoch = 0
+    selector_train_indices = train_indices[selector_relative_indices]
+    auxiliary_selector = PCALDASelector()
+    auxiliary_selector.fit(
+        raw_auxiliary_features[selector_train_indices],
+        targets[selector_train_indices],
+    )
+    auxiliary_features = auxiliary_selector.transform(raw_auxiliary_features)
+    dataset = VesselDataset(features, auxiliary_features, targets)
 
     train_loader = DataLoader(
         Subset(dataset, train_indices),
@@ -264,7 +304,34 @@ def _load_data(project_root: Path, config: TrainingConfig):
         num_workers=config.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
-    return train_loader, val_loader, class_names, features.shape[1:], targets, groups, train_indices, val_indices
+    selector_metadata = {
+        "raw_dim": int(raw_auxiliary_features.shape[1]),
+        "selected_dim": int(auxiliary_selector.output_dim),
+        "fit_samples": int(len(selector_train_indices)),
+        "fit_strategy": f"class_source_capped_without_replacement_{config.windows_per_source}",
+        "pca_dim": int(auxiliary_selector.pca.n_components_),
+        "lda_dim": (
+            int(auxiliary_selector.lda.scalings_.shape[1])
+            if auxiliary_selector.lda is not None
+            else 0
+        ),
+        "pca_explained_variance_ratio": float(
+            auxiliary_selector.pca.explained_variance_ratio_.sum()
+        ),
+    }
+    return (
+        train_loader,
+        val_loader,
+        class_names,
+        features.shape[1:],
+        auxiliary_features.shape[1],
+        auxiliary_selector,
+        selector_metadata,
+        targets,
+        groups,
+        train_indices,
+        val_indices,
+    )
 
 
 def _extract_logits(outputs: torch.Tensor) -> torch.Tensor:
@@ -282,13 +349,14 @@ def _run_epoch(model, data_loader, device, criterion, optimizer=None, gradient_c
 
     context = torch.enable_grad() if training else torch.no_grad()
     with context:
-        for features, targets in data_loader:
+        for features, auxiliary_features, targets in data_loader:
             features = features.to(device, non_blocking=True)
+            auxiliary_features = auxiliary_features.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             if training:
                 optimizer.zero_grad(set_to_none=True)
 
-            outputs = model(features)
+            outputs = model(features, auxiliary_features)
             logits = _extract_logits(outputs)
             loss = criterion(logits, targets)
             regularization_loss = getattr(model, "regularization_loss", None)
@@ -314,8 +382,13 @@ def _collect_predictions(model, data_loader, device):
     predictions = []
     targets_all = []
     with torch.no_grad():
-        for features, targets in data_loader:
-            logits = _extract_logits(model(features.to(device, non_blocking=True)))
+        for features, auxiliary_features, targets in data_loader:
+            logits = _extract_logits(
+                model(
+                    features.to(device, non_blocking=True),
+                    auxiliary_features.to(device, non_blocking=True),
+                )
+            )
             predictions.extend(logits.argmax(dim=1).cpu().tolist())
             targets_all.extend(targets.tolist())
     return targets_all, predictions
@@ -429,7 +502,7 @@ def train_experiment(
     project_root: Path,
     model_dir: Path,
     config: TrainingConfig,
-    build_model: Callable[[int, tuple[int, int]], torch.nn.Module],
+    build_model: Callable[[int, tuple[int, int], int], torch.nn.Module],
     build_optimizer: Callable,
     criterion: Callable,
     extra_config: Optional[dict] = None,
@@ -443,9 +516,19 @@ def train_experiment(
 
     set_seed(config.seed)
     model_dir.mkdir(parents=True, exist_ok=True)
-    train_loader, val_loader, class_names, input_shape, targets, groups, train_indices, val_indices = _load_data(
-        project_root, config
-    )
+    (
+        train_loader,
+        val_loader,
+        class_names,
+        input_shape,
+        auxiliary_dim,
+        auxiliary_selector,
+        selector_metadata,
+        targets,
+        groups,
+        train_indices,
+        val_indices,
+    ) = _load_data(project_root, config)
     preprocess_config_path = project_root / "processed" / "preprocess_config.json"
     if not preprocess_config_path.exists():
         raise FileNotFoundError(
@@ -466,9 +549,11 @@ def train_experiment(
         raise ValueError("Preprocessing metadata source-file count does not match groups.npy")
     split_strategy = "file_group_stratified"
     train_sampling = f"class_source_capped_without_replacement_{config.windows_per_source}"
-    feature_normalization = "train_only_global_minmax"
+    feature_normalization = (
+        "train_only_global_minmax_plus_train_only_standard_scaler_pca12_lda3_output_scaler"
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_model(len(class_names), input_shape).to(device)
+    model = build_model(len(class_names), input_shape, auxiliary_dim).to(device)
     optimizer = build_optimizer(model.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -488,6 +573,8 @@ def train_experiment(
     best_checkpoint_path = model_dir / f"checkpoint_best_{model_name}.pt"
     latest_log_path = model_dir / f"log_latest_{model_name}.json"
     best_log_path = model_dir / f"log_best_{model_name}.json"
+    latest_selector_path = model_dir / f"selector_latest_{model_name}.joblib"
+    best_selector_path = model_dir / f"selector_best_{model_name}.joblib"
     architecture_version = (extra_config or {}).get("architecture_version")
 
     print(f"Training {model_name} on {device}: {len(train_indices)} train / {len(val_indices)} validation samples")
@@ -525,6 +612,7 @@ def train_experiment(
                     "model_state_dict": model.state_dict(),
                     "class_names": class_names,
                     "input_shape": input_shape,
+                    "auxiliary_dim": auxiliary_dim,
                     "preprocessing_signature": preprocessing_signature,
                     "split_seed": config.seed,
                     "architecture_version": architecture_version,
@@ -555,6 +643,7 @@ def train_experiment(
             "model_state_dict": model.state_dict(),
             "class_names": class_names,
             "input_shape": input_shape,
+            "auxiliary_dim": auxiliary_dim,
             "preprocessing_signature": preprocessing_signature,
             "split_seed": config.seed,
             "architecture_version": architecture_version,
@@ -570,6 +659,7 @@ def train_experiment(
     matrix_path = model_dir / f"matrix_confusion_{model_name}.png"
     _save_training_curve(history, model_name, curve_path)
     _save_confusion_matrix(val_targets, val_predictions, class_names, model_name, matrix_path)
+    joblib.dump(auxiliary_selector, latest_selector_path)
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
     record = {
@@ -584,6 +674,7 @@ def train_experiment(
             "split_strategy": split_strategy,
             "train_sampling": train_sampling,
             "feature_normalization": feature_normalization,
+            "auxiliary_feature_selection": selector_metadata,
             "preprocessing_signature": preprocessing_signature,
             "preprocessing": preprocess_config,
             "total_samples": int(len(targets)),
@@ -609,6 +700,8 @@ def train_experiment(
             "best_checkpoint": best_checkpoint_path.relative_to(project_root).as_posix(),
             "training_curve": curve_path.relative_to(project_root).as_posix(),
             "confusion_matrix": matrix_path.relative_to(project_root).as_posix(),
+            "latest_auxiliary_selector": latest_selector_path.relative_to(project_root).as_posix(),
+            "best_auxiliary_selector": best_selector_path.relative_to(project_root).as_posix(),
         },
     }
 
@@ -623,6 +716,7 @@ def train_experiment(
     _write_json(latest_log_path, record)
     if run_best_accuracy > previous_best_accuracy:
         run_best_path.replace(best_checkpoint_path)
+        joblib.dump(auxiliary_selector, best_selector_path)
         _write_json(best_log_path, record)
         print(f"Updated historical best result: {run_best_accuracy:.4f}")
     else:

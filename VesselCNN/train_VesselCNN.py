@@ -36,7 +36,11 @@ def main() -> None:
         project_root=PROJECT_ROOT,
         model_dir=MODEL_DIR,
         config=config,
-        build_model=lambda num_classes, input_shape: VesselCNN(num_classes, input_shape),
+        build_model=lambda num_classes, input_shape, auxiliary_dim: VesselCNN(
+            num_classes,
+            input_shape,
+            auxiliary_dim=auxiliary_dim,
+        ),
         build_optimizer=lambda parameters: optim.AdamW(
             parameters,
             lr=config.learning_rate,
