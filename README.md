@@ -320,6 +320,14 @@ python plot_compare_models.py
 
 脚本读取三个 `log_latest_模型名.json`，生成根目录下的 `curve_comparison_three_models.png`。
 
+评估三种方法在不同数据噪声强度下的分类精度：
+
+```bash
+python evaluate_noise_robustness.py
+```
+
+该实验在归一化到 `[0, 1]` 的验证集梅尔特征上加入零均值高斯噪声，默认标准差为 `0、0.05、0.10、0.15、0.20`。每个非零强度使用相同噪声样本评估三个模型并重复5次，结果均值与标准差写入 `noise_robustness_results.json`，同时生成无标题的单图分组柱状图 `noise_robustness_three_models.png`。
+
 ---
 
 ## 结果可视化与模型表现
