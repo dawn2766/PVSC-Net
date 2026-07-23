@@ -1,0 +1,1466 @@
+{
+  "schema_version": 1,
+  "device": "cuda",
+  "experiment_design": {
+    "type": "three-seed paired controlled ablation",
+    "seeds": [
+      2024,
+      2025,
+      2026
+    ],
+    "split": "class-stratified source-file grouped holdout",
+    "validation_fraction": 0.2,
+    "epochs": 35,
+    "batch_size": 64,
+    "optimizer": "AdamW",
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "early_stopping": false,
+    "selection": "highest validation window accuracy within each 35-epoch run",
+    "limitations": "Three repeats support descriptive robustness analysis only; no inferential significance claim is made."
+  },
+  "seeds": {
+    "2024": {
+      "train_windows": 3527,
+      "validation_windows": 889,
+      "train_source_files": 51,
+      "validation_source_files": 12,
+      "source_file_overlap": [],
+      "models": {
+        "PVSCNet": {
+          "best_epoch": 7,
+          "parameter_count": 540554,
+          "window_level": {
+            "accuracy": 0.6760404949381328,
+            "macro_f1": 0.673254995601672,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.6867088607594937,
+              "Passengership": 0.9248554913294798,
+              "Tanker": 0.29880478087649404,
+              "Tug": 1.0
+            },
+            "confusion_matrix": [
+              [
+                217,
+                67,
+                30,
+                2
+              ],
+              [
+                8,
+                160,
+                3,
+                2
+              ],
+              [
+                58,
+                86,
+                75,
+                32
+              ],
+              [
+                0,
+                0,
+                0,
+                149
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.8392857142857143,
+            "source_count": 12,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/44.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/12.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 12
+              },
+              {
+                "source_file": "Passengership/16.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 6
+              },
+              {
+                "source_file": "Passengership/17.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 18
+              },
+              {
+                "source_file": "Passengership/30.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 2
+              },
+              {
+                "source_file": "Passengership/50.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 128
+              },
+              {
+                "source_file": "Passengership/8.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 7
+              },
+              {
+                "source_file": "Tanker/13.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 123
+              },
+              {
+                "source_file": "Tanker/39.wav",
+                "target": 2,
+                "prediction": 1,
+                "window_count": 101
+              },
+              {
+                "source_file": "Tanker/48.wav",
+                "target": 2,
+                "prediction": 1,
+                "window_count": 27
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/44.wav",
+            "Passengership/12.wav",
+            "Passengership/16.wav",
+            "Passengership/17.wav",
+            "Passengership/30.wav",
+            "Passengership/50.wav",
+            "Passengership/8.wav",
+            "Tanker/13.wav",
+            "Tanker/39.wav",
+            "Tanker/48.wav",
+            "Tug/49.wav"
+          ]
+        },
+        "DeterministicFusionNet": {
+          "best_epoch": 7,
+          "parameter_count": 536442,
+          "window_level": {
+            "accuracy": 0.6434195725534309,
+            "macro_f1": 0.6390997303304251,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.569620253164557,
+              "Passengership": 0.8497109826589595,
+              "Tanker": 0.38247011952191234,
+              "Tug": 1.0
+            },
+            "confusion_matrix": [
+              [
+                180,
+                73,
+                38,
+                25
+              ],
+              [
+                9,
+                147,
+                0,
+                17
+              ],
+              [
+                36,
+                50,
+                96,
+                69
+              ],
+              [
+                0,
+                0,
+                0,
+                149
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.75,
+            "macro_f1": 0.6726190476190476,
+            "source_count": 12,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/44.wav",
+                "target": 0,
+                "prediction": 1,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/12.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 12
+              },
+              {
+                "source_file": "Passengership/16.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 6
+              },
+              {
+                "source_file": "Passengership/17.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 18
+              },
+              {
+                "source_file": "Passengership/30.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 2
+              },
+              {
+                "source_file": "Passengership/50.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 128
+              },
+              {
+                "source_file": "Passengership/8.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 7
+              },
+              {
+                "source_file": "Tanker/13.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 123
+              },
+              {
+                "source_file": "Tanker/39.wav",
+                "target": 2,
+                "prediction": 3,
+                "window_count": 101
+              },
+              {
+                "source_file": "Tanker/48.wav",
+                "target": 2,
+                "prediction": 1,
+                "window_count": 27
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/44.wav",
+            "Passengership/12.wav",
+            "Passengership/16.wav",
+            "Passengership/17.wav",
+            "Passengership/30.wav",
+            "Passengership/50.wav",
+            "Passengership/8.wav",
+            "Tanker/13.wav",
+            "Tanker/39.wav",
+            "Tanker/48.wav",
+            "Tug/49.wav"
+          ]
+        },
+        "SpectrogramOnlyPVNet": {
+          "best_epoch": 9,
+          "parameter_count": 531108,
+          "window_level": {
+            "accuracy": 0.6501687289088864,
+            "macro_f1": 0.6445039920254134,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.7151898734177216,
+              "Passengership": 0.7052023121387283,
+              "Tanker": 0.33067729083665337,
+              "Tug": 0.9865771812080537
+            },
+            "confusion_matrix": [
+              [
+                226,
+                59,
+                21,
+                10
+              ],
+              [
+                29,
+                122,
+                22,
+                0
+              ],
+              [
+                92,
+                6,
+                83,
+                70
+              ],
+              [
+                0,
+                2,
+                0,
+                147
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.75,
+            "macro_f1": 0.6939393939393939,
+            "source_count": 12,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/44.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/12.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 12
+              },
+              {
+                "source_file": "Passengership/16.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 6
+              },
+              {
+                "source_file": "Passengership/17.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 18
+              },
+              {
+                "source_file": "Passengership/30.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 2
+              },
+              {
+                "source_file": "Passengership/50.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 128
+              },
+              {
+                "source_file": "Passengership/8.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 7
+              },
+              {
+                "source_file": "Tanker/13.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 123
+              },
+              {
+                "source_file": "Tanker/39.wav",
+                "target": 2,
+                "prediction": 3,
+                "window_count": 101
+              },
+              {
+                "source_file": "Tanker/48.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 27
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/44.wav",
+            "Passengership/12.wav",
+            "Passengership/16.wav",
+            "Passengership/17.wav",
+            "Passengership/30.wav",
+            "Passengership/50.wav",
+            "Passengership/8.wav",
+            "Tanker/13.wav",
+            "Tanker/39.wav",
+            "Tanker/48.wav",
+            "Tug/49.wav"
+          ]
+        }
+      }
+    },
+    "2025": {
+      "train_windows": 3527,
+      "validation_windows": 889,
+      "train_source_files": 50,
+      "validation_source_files": 13,
+      "source_file_overlap": [],
+      "models": {
+        "PVSCNet": {
+          "best_epoch": 21,
+          "parameter_count": 540554,
+          "window_level": {
+            "accuracy": 0.8695163104611924,
+            "macro_f1": 0.8728381361580908,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.9050632911392406,
+              "Passengership": 0.6763005780346821,
+              "Tanker": 0.8844621513944223,
+              "Tug": 0.9932885906040269
+            },
+            "confusion_matrix": [
+              [
+                286,
+                6,
+                24,
+                0
+              ],
+              [
+                1,
+                117,
+                55,
+                0
+              ],
+              [
+                27,
+                0,
+                222,
+                2
+              ],
+              [
+                1,
+                0,
+                0,
+                148
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.6923076923076923,
+            "macro_f1": 0.75,
+            "source_count": 13,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/96.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/14.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 36
+              },
+              {
+                "source_file": "Passengership/27.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 24
+              },
+              {
+                "source_file": "Passengership/29.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 26
+              },
+              {
+                "source_file": "Passengership/33.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 87
+              },
+              {
+                "source_file": "Tanker/10.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 21
+              },
+              {
+                "source_file": "Tanker/14.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 17
+              },
+              {
+                "source_file": "Tanker/2.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 117
+              },
+              {
+                "source_file": "Tanker/21.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 10
+              },
+              {
+                "source_file": "Tanker/41.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 33
+              },
+              {
+                "source_file": "Tanker/42.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 53
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/96.wav",
+            "Passengership/14.wav",
+            "Passengership/27.wav",
+            "Passengership/29.wav",
+            "Passengership/33.wav",
+            "Tanker/10.wav",
+            "Tanker/14.wav",
+            "Tanker/2.wav",
+            "Tanker/21.wav",
+            "Tanker/41.wav",
+            "Tanker/42.wav",
+            "Tug/49.wav"
+          ]
+        },
+        "DeterministicFusionNet": {
+          "best_epoch": 23,
+          "parameter_count": 536442,
+          "window_level": {
+            "accuracy": 0.8616422947131609,
+            "macro_f1": 0.8680416040818535,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.8322784810126582,
+              "Passengership": 0.7167630057803468,
+              "Tanker": 0.9163346613545816,
+              "Tug": 1.0
+            },
+            "confusion_matrix": [
+              [
+                263,
+                21,
+                32,
+                0
+              ],
+              [
+                4,
+                124,
+                45,
+                0
+              ],
+              [
+                18,
+                3,
+                230,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                149
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.8461538461538461,
+            "macro_f1": 0.8726190476190476,
+            "source_count": 13,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/96.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/14.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 36
+              },
+              {
+                "source_file": "Passengership/27.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 24
+              },
+              {
+                "source_file": "Passengership/29.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 26
+              },
+              {
+                "source_file": "Passengership/33.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 87
+              },
+              {
+                "source_file": "Tanker/10.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 21
+              },
+              {
+                "source_file": "Tanker/14.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 17
+              },
+              {
+                "source_file": "Tanker/2.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 117
+              },
+              {
+                "source_file": "Tanker/21.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 10
+              },
+              {
+                "source_file": "Tanker/41.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 33
+              },
+              {
+                "source_file": "Tanker/42.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 53
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/96.wav",
+            "Passengership/14.wav",
+            "Passengership/27.wav",
+            "Passengership/29.wav",
+            "Passengership/33.wav",
+            "Tanker/10.wav",
+            "Tanker/14.wav",
+            "Tanker/2.wav",
+            "Tanker/21.wav",
+            "Tanker/41.wav",
+            "Tanker/42.wav",
+            "Tug/49.wav"
+          ]
+        },
+        "SpectrogramOnlyPVNet": {
+          "best_epoch": 23,
+          "parameter_count": 531108,
+          "window_level": {
+            "accuracy": 0.7907761529808774,
+            "macro_f1": 0.8015332115309861,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.7531645569620253,
+              "Passengership": 0.815028901734104,
+              "Tanker": 0.8884462151394422,
+              "Tug": 0.6778523489932886
+            },
+            "confusion_matrix": [
+              [
+                238,
+                9,
+                68,
+                1
+              ],
+              [
+                1,
+                141,
+                31,
+                0
+              ],
+              [
+                25,
+                3,
+                223,
+                0
+              ],
+              [
+                48,
+                0,
+                0,
+                101
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.7692307692307693,
+            "macro_f1": 0.7818181818181817,
+            "source_count": 13,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/96.wav",
+                "target": 0,
+                "prediction": 2,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/14.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 36
+              },
+              {
+                "source_file": "Passengership/27.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 24
+              },
+              {
+                "source_file": "Passengership/29.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 26
+              },
+              {
+                "source_file": "Passengership/33.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 87
+              },
+              {
+                "source_file": "Tanker/10.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 21
+              },
+              {
+                "source_file": "Tanker/14.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 17
+              },
+              {
+                "source_file": "Tanker/2.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 117
+              },
+              {
+                "source_file": "Tanker/21.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 10
+              },
+              {
+                "source_file": "Tanker/41.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 33
+              },
+              {
+                "source_file": "Tanker/42.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 53
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/96.wav",
+            "Passengership/14.wav",
+            "Passengership/27.wav",
+            "Passengership/29.wav",
+            "Passengership/33.wav",
+            "Tanker/10.wav",
+            "Tanker/14.wav",
+            "Tanker/2.wav",
+            "Tanker/21.wav",
+            "Tanker/41.wav",
+            "Tanker/42.wav",
+            "Tug/49.wav"
+          ]
+        }
+      }
+    },
+    "2026": {
+      "train_windows": 3527,
+      "validation_windows": 889,
+      "train_source_files": 51,
+      "validation_source_files": 12,
+      "source_file_overlap": [],
+      "models": {
+        "PVSCNet": {
+          "best_epoch": 10,
+          "parameter_count": 540554,
+          "window_level": {
+            "accuracy": 0.8706411698537683,
+            "macro_f1": 0.8785607894117011,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.8765822784810127,
+              "Passengership": 0.6994219653179191,
+              "Tanker": 0.9043824701195219,
+              "Tug": 1.0
+            },
+            "confusion_matrix": [
+              [
+                277,
+                1,
+                38,
+                0
+              ],
+              [
+                9,
+                121,
+                42,
+                1
+              ],
+              [
+                23,
+                1,
+                227,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                149
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.843939393939394,
+            "source_count": 12,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/96.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/14.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 36
+              },
+              {
+                "source_file": "Passengership/32.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 41
+              },
+              {
+                "source_file": "Passengership/33.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 87
+              },
+              {
+                "source_file": "Passengership/5.wav",
+                "target": 1,
+                "prediction": 0,
+                "window_count": 9
+              },
+              {
+                "source_file": "Tanker/20.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 81
+              },
+              {
+                "source_file": "Tanker/29.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 85
+              },
+              {
+                "source_file": "Tanker/30.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 24
+              },
+              {
+                "source_file": "Tanker/32.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 28
+              },
+              {
+                "source_file": "Tanker/41.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 33
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/96.wav",
+            "Passengership/14.wav",
+            "Passengership/32.wav",
+            "Passengership/33.wav",
+            "Passengership/5.wav",
+            "Tanker/20.wav",
+            "Tanker/29.wav",
+            "Tanker/30.wav",
+            "Tanker/32.wav",
+            "Tanker/41.wav",
+            "Tug/49.wav"
+          ]
+        },
+        "DeterministicFusionNet": {
+          "best_epoch": 13,
+          "parameter_count": 536442,
+          "window_level": {
+            "accuracy": 0.8143982002249719,
+            "macro_f1": 0.8283727835049534,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.8670886075949367,
+              "Passengership": 0.7109826589595376,
+              "Tanker": 0.7091633466135459,
+              "Tug": 1.0
+            },
+            "confusion_matrix": [
+              [
+                274,
+                5,
+                37,
+                0
+              ],
+              [
+                6,
+                123,
+                41,
+                3
+              ],
+              [
+                62,
+                11,
+                178,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                149
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.75,
+            "macro_f1": 0.7833333333333333,
+            "source_count": 12,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/96.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/14.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 36
+              },
+              {
+                "source_file": "Passengership/32.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 41
+              },
+              {
+                "source_file": "Passengership/33.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 87
+              },
+              {
+                "source_file": "Passengership/5.wav",
+                "target": 1,
+                "prediction": 0,
+                "window_count": 9
+              },
+              {
+                "source_file": "Tanker/20.wav",
+                "target": 2,
+                "prediction": 0,
+                "window_count": 81
+              },
+              {
+                "source_file": "Tanker/29.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 85
+              },
+              {
+                "source_file": "Tanker/30.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 24
+              },
+              {
+                "source_file": "Tanker/32.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 28
+              },
+              {
+                "source_file": "Tanker/41.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 33
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/96.wav",
+            "Passengership/14.wav",
+            "Passengership/32.wav",
+            "Passengership/33.wav",
+            "Passengership/5.wav",
+            "Tanker/20.wav",
+            "Tanker/29.wav",
+            "Tanker/30.wav",
+            "Tanker/32.wav",
+            "Tanker/41.wav",
+            "Tug/49.wav"
+          ]
+        },
+        "SpectrogramOnlyPVNet": {
+          "best_epoch": 14,
+          "parameter_count": 531108,
+          "window_level": {
+            "accuracy": 0.7840269966254219,
+            "macro_f1": 0.8000350866497465,
+            "sample_count": 889,
+            "recall_by_class": {
+              "Cargo": 0.7974683544303798,
+              "Passengership": 0.7167630057803468,
+              "Tanker": 0.7370517928286853,
+              "Tug": 0.912751677852349
+            },
+            "confusion_matrix": [
+              [
+                252,
+                4,
+                59,
+                1
+              ],
+              [
+                1,
+                124,
+                48,
+                0
+              ],
+              [
+                39,
+                27,
+                185,
+                0
+              ],
+              [
+                13,
+                0,
+                0,
+                136
+              ]
+            ]
+          },
+          "source_level": {
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.875,
+            "source_count": 12,
+            "records": [
+              {
+                "source_file": "Cargo/110.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 159
+              },
+              {
+                "source_file": "Cargo/96.wav",
+                "target": 0,
+                "prediction": 0,
+                "window_count": 157
+              },
+              {
+                "source_file": "Passengership/14.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 36
+              },
+              {
+                "source_file": "Passengership/32.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 41
+              },
+              {
+                "source_file": "Passengership/33.wav",
+                "target": 1,
+                "prediction": 1,
+                "window_count": 87
+              },
+              {
+                "source_file": "Passengership/5.wav",
+                "target": 1,
+                "prediction": 2,
+                "window_count": 9
+              },
+              {
+                "source_file": "Tanker/20.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 81
+              },
+              {
+                "source_file": "Tanker/29.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 85
+              },
+              {
+                "source_file": "Tanker/30.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 24
+              },
+              {
+                "source_file": "Tanker/32.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 28
+              },
+              {
+                "source_file": "Tanker/41.wav",
+                "target": 2,
+                "prediction": 2,
+                "window_count": 33
+              },
+              {
+                "source_file": "Tug/49.wav",
+                "target": 3,
+                "prediction": 3,
+                "window_count": 149
+              }
+            ]
+          },
+          "preprocessing_signature": "80093138f16f9a9f",
+          "validation_source_files": [
+            "Cargo/110.wav",
+            "Cargo/96.wav",
+            "Passengership/14.wav",
+            "Passengership/32.wav",
+            "Passengership/33.wav",
+            "Passengership/5.wav",
+            "Tanker/20.wav",
+            "Tanker/29.wav",
+            "Tanker/30.wav",
+            "Tanker/32.wav",
+            "Tanker/41.wav",
+            "Tug/49.wav"
+          ]
+        }
+      }
+    }
+  },
+  "class_names": [
+    "Cargo",
+    "Passengership",
+    "Tanker",
+    "Tug"
+  ],
+  "summary": {
+    "PVSCNet": {
+      "window_level": {
+        "accuracy": {
+          "values": [
+            0.6760404949381328,
+            0.8695163104611924,
+            0.8706411698537683
+          ],
+          "mean": 0.8053993250843644,
+          "sample_std": 0.11202944492304014,
+          "min": 0.6760404949381328,
+          "max": 0.8706411698537683
+        },
+        "macro_f1": {
+          "values": [
+            0.673254995601672,
+            0.8728381361580908,
+            0.8785607894117011
+          ],
+          "mean": 0.8082179737238212,
+          "sample_std": 0.11691638588224099,
+          "min": 0.673254995601672,
+          "max": 0.8785607894117011
+        }
+      },
+      "source_level": {
+        "accuracy": {
+          "values": [
+            0.8333333333333334,
+            0.6923076923076923,
+            0.8333333333333334
+          ],
+          "mean": 0.7863247863247863,
+          "sample_std": 0.08142119180879341,
+          "min": 0.6923076923076923,
+          "max": 0.8333333333333334
+        },
+        "macro_f1": {
+          "values": [
+            0.8392857142857143,
+            0.75,
+            0.843939393939394
+          ],
+          "mean": 0.8110750360750361,
+          "sample_std": 0.05294368902196926,
+          "min": 0.75,
+          "max": 0.843939393939394
+        }
+      },
+      "parameter_count": 540554
+    },
+    "DeterministicFusionNet": {
+      "window_level": {
+        "accuracy": {
+          "values": [
+            0.6434195725534309,
+            0.8616422947131609,
+            0.8143982002249719
+          ],
+          "mean": 0.7731533558305212,
+          "sample_std": 0.11480915472444922,
+          "min": 0.6434195725534309,
+          "max": 0.8616422947131609
+        },
+        "macro_f1": {
+          "values": [
+            0.6390997303304251,
+            0.8680416040818535,
+            0.8283727835049534
+          ],
+          "mean": 0.7785047059724106,
+          "sample_std": 0.12234669695908228,
+          "min": 0.6390997303304251,
+          "max": 0.8680416040818535
+        }
+      },
+      "source_level": {
+        "accuracy": {
+          "values": [
+            0.75,
+            0.8461538461538461,
+            0.75
+          ],
+          "mean": 0.782051282051282,
+          "sample_std": 0.05551444896054093,
+          "min": 0.75,
+          "max": 0.8461538461538461
+        },
+        "macro_f1": {
+          "values": [
+            0.6726190476190476,
+            0.8726190476190476,
+            0.7833333333333333
+          ],
+          "mean": 0.7761904761904761,
+          "sample_std": 0.10019114385075387,
+          "min": 0.6726190476190476,
+          "max": 0.8726190476190476
+        }
+      },
+      "parameter_count": 536442,
+      "paired_accuracy_difference_from_pvscnet": {
+        "values": [
+          0.032620922384701934,
+          0.007874015748031482,
+          0.05624296962879638
+        ],
+        "mean": 0.032245969253843265,
+        "sample_std": 0.02418665680220493
+      }
+    },
+    "SpectrogramOnlyPVNet": {
+      "window_level": {
+        "accuracy": {
+          "values": [
+            0.6501687289088864,
+            0.7907761529808774,
+            0.7840269966254219
+          ],
+          "mean": 0.7416572928383953,
+          "sample_std": 0.07930325198433202,
+          "min": 0.6501687289088864,
+          "max": 0.7907761529808774
+        },
+        "macro_f1": {
+          "values": [
+            0.6445039920254134,
+            0.8015332115309861,
+            0.8000350866497465
+          ],
+          "mean": 0.7486907634020487,
+          "sample_std": 0.09023149999836752,
+          "min": 0.6445039920254134,
+          "max": 0.8015332115309861
+        }
+      },
+      "source_level": {
+        "accuracy": {
+          "values": [
+            0.75,
+            0.7692307692307693,
+            0.8333333333333334
+          ],
+          "mean": 0.7841880341880342,
+          "sample_std": 0.043633713368936206,
+          "min": 0.75,
+          "max": 0.8333333333333334
+        },
+        "macro_f1": {
+          "values": [
+            0.6939393939393939,
+            0.7818181818181817,
+            0.875
+          ],
+          "mean": 0.7835858585858585,
+          "sample_std": 0.09054324534510975,
+          "min": 0.6939393939393939,
+          "max": 0.875
+        }
+      },
+      "parameter_count": 531108,
+      "paired_accuracy_difference_from_pvscnet": {
+        "values": [
+          0.025871766029246346,
+          0.07874015748031493,
+          0.08661417322834641
+        ],
+        "mean": 0.06374203224596924,
+        "sample_std": 0.03303207272476493
+      }
+    }
+  }
+}
